@@ -1,39 +1,38 @@
+from jax.experimental.pallas import dot
+from typing import Iterator
 from dataclasses import dataclass
-from functools import reduce
+from functools import reduce, partial
+from itertools import count
 from random import shuffle
 
+import jax
 from jax import random
 from jax import numpy as jnp
 
 from gradling.data import NAMES
 
 
-class KeyGenerator:
-    def __init__(self):
-        self.key = random.key(42)
+@jax.tree_util.register_pytree_with_keys_class
+class dot_dict(dict):
+    __setattr__ = dict.__setitem__
+    __getattr__ = dict.__getitem__
 
-    def one(self):
-        key, subkey = random.split(self.key)
-        self.key = key
-        return subkey
+    def tree_flatten_with_keys(self):
+        keys = tuple(sorted(self))
+        return tuple((jax.tree_util.DictKey(k), self[k]) for k in keys), keys
 
-    def many(self, n):
-        key, *subkeys = random.split(self.key, n=n)
-        self.key = key
-        return subkeys
+    @classmethod
+    def tree_unflatten(cls, keys, values):
+        return cls(zip(keys, values))
 
 
 @dataclass
 class Hyperparams:
+    rng_seed: int
     ctx_length: int
     vocab_size: int
     emb_size: int
-
-
-@dataclass
-class Context:
-    params: Hyperparams
-    kg: KeyGenerator
+    hidden_size: int
 
 
 @dataclass
@@ -66,8 +65,7 @@ class Tokenizer:
 
     @classmethod
     def from_list(cls, words):
-        vocab = list(set("".join(words)))
-        sorted(vocab)
+        vocab = sorted(list(set("".join(words))))
         vocab.insert(0, ".")
         return cls(vocab)
 
@@ -78,8 +76,8 @@ def load_names():
         return names
 
 
-def create_examples(ctx: Context, tok: Tokenizer, words: list[str]):
-    l = ctx.params.ctx_length
+def create_examples(params: Hyperparams, tok: Tokenizer, words: list[str]):
+    l = params.ctx_length
     examples = []
     for word in words:
         padded = f"{l*'.'}{word}."
@@ -111,53 +109,170 @@ def create_datasets(xs, ys):
     )
 
 
-class Embedding:
-    def __init__(self, ctx: Context):
-        key = ctx.kg.one()
-        self.C = random.normal(key, (ctx.params.vocab_size, ctx.params.emb_size))
-
-    def __call__(self, x):
-        self.out = self.C[x]
-        return self.out
-
-    def parameters(self):
-        return [self.C]
+def cross_entropy_loss(logits: jax.Array, targets: jax.Array):
+    assert len(logits) == len(targets)
+    shifted = logits - logits.max(1, keepdims=True)
+    log_probs = shifted - jnp.log(jnp.exp(shifted).sum(1, keepdims=True))
+    return -log_probs[jnp.arange(len(targets)), targets].mean()
 
 
-class Flatten:
-    def __call__(self, x):
-        b, *rest = x.shape
-        dim = reduce(lambda a, b: a * b, rest)
-        self.out = x.reshape((b, dim))
-        return self.out
+def linear(rng: Iterator, fan_in: int, fan_out: int):
+    return dot_dict(
+        W=random.normal(next(rng), (fan_in, fan_out)) / (5 * fan_in**0.5 / 3),
+        b=jnp.zeros((fan_out,)),
+        bnorm=dot_dict(
+            gamma=random.normal(next(rng), (fan_out,)), beta=jnp.zeros((fan_out,))
+        ),
+    )
 
-    def parameters(self):
-        return []
+
+def init_weights(params: Hyperparams, rng):
+    return dot_dict(
+        emb=random.normal(next(rng), (params.vocab_size, params.emb_size)) * 0.01,
+        hidden=[
+            linear(rng, params.ctx_length * params.emb_size, params.hidden_size),
+            linear(rng, params.hidden_size, params.hidden_size),
+        ],
+        output=random.normal(next(rng), (params.hidden_size, params.vocab_size))
+        / (params.hidden_size**0.5),
+    )
 
 
-class Sequential:
-    def __init__(self, *layers):
-        self.layers = layers
+def bnorm_state(size: int):
+    return dot_dict(
+        running_mean=jnp.zeros((size,)),
+        running_var=jnp.ones((size,)),
+    )
 
-    def __call__(self, x):
-        for layer in self.layers:
-            x = layer(x)
-        self.out = x
-        return self.out
 
-    def parameters(self):
-        return [p for p in l.parameters() for l in self.layers]
+def init_state(params: Hyperparams):
+    return dot_dict(
+        hidden=[
+            bnorm_state(params.hidden_size),
+            bnorm_state(params.hidden_size),
+        ]
+    )
+
+
+def update(current, new):
+    mom = 0.1
+    return ((1 - mom) * current) + (mom * new)
+
+
+def model(weights, state, x, eval=False):
+    # New state
+    new_bnstate = []
+    # Look up positional embeddings and flatten
+    x = weights.emb[x]
+    b, *rest = x.shape
+    x = jnp.reshape(x, (b, reduce(lambda a, b: a * b, rest)))
+    # For each hidden layer
+    for i, layer in enumerate(weights.hidden):
+        # Apply the weights and bias
+        x = x @ layer.W + layer.b
+        # Batch norm
+        bnorm_state = state.hidden[i]
+        if eval:
+            xmean = bnorm_state.running_mean
+            xvar = bnorm_state.running_var
+        else:
+            xmean = jnp.mean(x, 0)
+            xvar = jnp.var(x, 0)
+            new_bnstate.append(
+                dot_dict(
+                    running_mean=update(bnorm_state.running_mean, xmean),
+                    running_var=update(bnorm_state.running_var, xvar),
+                )
+            )
+        # Normalize x
+        x = (x - xmean) / (xvar + 1e-5) ** 0.5
+        x = x * layer.bnorm.gamma + layer.bnorm.beta
+        # Apply the nonlinearity.
+        x = jax.lax.tanh(x)
+
+    logits = x @ weights.output
+    return logits, dot_dict(hidden=new_bnstate)
+
+
+@jax.jit
+def train_step(
+    weights,
+    state,
+    x,
+    y,
+):
+    def loss(W):
+        logits, new_state = model(W, state, x)
+        return cross_entropy_loss(logits, y), new_state
+
+    return jax.value_and_grad(loss, has_aux=True)(weights)
+
+
+@jax.jit
+def val_loss(weights, state, x, y):
+    logits, _ = model(weights, state, x, eval=True)
+    return cross_entropy_loss(logits, y)
+
+
+@jax.jit
+def sample_one(key, weights, state, ctx):
+    logits, _ = model(weights, state, ctx, eval=True)
+    return random.categorical(key, logits)
+
+
+def sample(rng, params: Hyperparams, tok: Tokenizer, weights, state, n=5):
+    for _ in range(n):
+        context = ["."] * params.ctx_length
+        result = []
+        while True:
+            choice = sample_one(
+                next(rng), weights, state, jnp.array([tok.encode(context)])
+            ).item()
+            next_token = tok.decode_one(choice)
+            if next_token == ".":
+                break
+            result.append(next_token)
+            context.append(next_token)
+            context = context[1:]
+        print("".join(result))
 
 
 def main() -> None:
     print("Hello from gradling!")
     names = load_names()
     tok = Tokenizer.from_list(names)
-    params = Hyperparams(ctx_length=8, vocab_size=tok.vocab_size, emb_size=24)
-    kg = KeyGenerator()
-    ctx = Context(params=params, kg=kg)
-    xs, ys = create_examples(ctx, tok, names)
+    params = Hyperparams(
+        rng_seed=42,
+        ctx_length=8,
+        vocab_size=tok.vocab_size,
+        emb_size=24,
+        hidden_size=200,
+    )
+    root_key = random.key(params.rng_seed)
+    rng = map(partial(random.fold_in, root_key), count())
+    xs, ys = create_examples(params, tok, names)
     train, dev, test = create_datasets(xs, ys)
+    weights, state = init_weights(params, rng), init_state(params)
+    steps = 50_000
+    batch_size = 32
+    for step in range(steps):
+        mask = random.randint(
+            next(rng), (batch_size,), minval=0, maxval=(len(train.xs) - 1)
+        )
+        X, Y = train.xs[mask], train.ys[mask]
+        (loss, new_state), grad = train_step(
+            weights,
+            state,
+            X,
+            Y,
+        )
+        state = new_state
+        lr = 0.1 if step <= 40000 else 0.01
+        weights = jax.tree.map(lambda w, g: w + -lr * g, weights, grad)
 
-    model = Sequential(Embedding(ctx), Flatten())
-    print(model(train.xs[0:32]).shape)
+        if step % 100 == 0:
+            vloss = val_loss(weights, state, dev.xs, dev.ys)
+            print(f"{step}/{steps}: loss = {vloss:.4f}")
+        # print(jax.tree_util.tree_structure(grad))
+
+    sample(rng, params, tok, weights, state, n=50)
