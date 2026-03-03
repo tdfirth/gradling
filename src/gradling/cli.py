@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import argparse
 import sys
-from collections.abc import Callable
-from dataclasses import dataclass
 from types import UnionType
 from typing import Any, Union, get_args, get_origin
 
@@ -13,31 +11,10 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-from gradling.configs import Config
-from gradling.models.gpt.config import GPTConfig
-from gradling.models.gpt.sample import sample as gpt_sample
-from gradling.models.gpt.train import train as gpt_train
+from gradling.config import Config
+from gradling.models import MODELS, Model
 
 console = Console()
-
-
-@dataclass(frozen=True)
-class ModelSpec:
-    cfg: type[Config]
-    commands: dict[str, Callable[..., None]]
-    description: str = ""
-
-
-MODELS: dict[str, ModelSpec] = {
-    "gpt": ModelSpec(
-        cfg=GPTConfig,
-        commands={
-            "train": gpt_train,
-            "sample": gpt_sample,
-        },
-        description="Character-level GPT model and commands.",
-    ),
-}
 
 
 def _fail(message: str, *, hint: str | None = None) -> int:
@@ -74,17 +51,17 @@ def _render_models_table() -> None:
     table.add_column("Model", style="cyan")
     table.add_column("Config")
     table.add_column("Description")
-    for name, spec in sorted(MODELS.items()):
-        table.add_row(name, spec.cfg.__name__, spec.description or "-")
+    for name, model in sorted(MODELS.items()):
+        table.add_row(name, model.cfg.__name__, model.description or "-")
     console.print(table)
 
 
-def _render_commands_table(model_name: str, spec: ModelSpec) -> None:
+def _render_commands_table(model_name: str, spec: Model) -> None:
     table = Table(title=f"Commands for {model_name}")
     table.add_column("Command", style="cyan")
     table.add_column("Description")
-    for name, fn in sorted(spec.commands.items()):
-        doc = (fn.__doc__ or "").strip().splitlines()
+    for name, cmd in sorted(spec.commands.items()):
+        doc = (cmd.fn.__doc__ or "").strip().splitlines()
         summary = doc[0] if doc else "-"
         table.add_row(name, summary)
     console.print(table)
@@ -217,7 +194,7 @@ def _handle_run(args: list[str]) -> int:
         )
 
     try:
-        runner(cfg)
+        runner.fn(cfg)
     except ValueError as exc:
         return _fail(str(exc))
     return 0

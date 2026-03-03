@@ -1,4 +1,4 @@
-from gradling.configs import Config
+from gradling.config import Config
 
 
 class GPTConfig(Config, name="gpt"):

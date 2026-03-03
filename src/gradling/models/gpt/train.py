@@ -89,6 +89,8 @@ def _run_training_loop(
 
 
 def train(cfg: GPTConfig) -> None:
+    """Train a GPT."""
+
     rngs = nnx.Rngs(cfg.seed)
 
     log.info("Loading data")

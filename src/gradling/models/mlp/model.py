@@ -9,6 +9,7 @@ import jax
 from jax import numpy as jnp
 from jax import random
 
+from gradling.config import Config
 from gradling.data import NAMES
 
 
@@ -33,6 +34,14 @@ class dot_dict(dict):
 
 @dataclass
 class Hyperparams:
+    rng_seed: int
+    ctx_length: int
+    vocab_size: int
+    emb_size: int
+    hidden_size: int
+
+
+class MLPConfig(Config):
     rng_seed: int
     ctx_length: int
     vocab_size: int

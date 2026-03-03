@@ -1,5 +1,6 @@
-import gradling.cli as cli
-from gradling.configs import Config
+from gradling import cli
+from gradling.config import Config
+from gradling.models import Command, Model
 
 
 class CliConfigFixture(Config):
@@ -15,9 +16,11 @@ class StringHintConfig(Config):
 
 
 def _with_test_model(monkeypatch, name: str, cfg_cls: type[Config], command):
-    models = dict(cli.MODELS)
-    models[name] = cli.ModelSpec(cfg=cfg_cls, commands={"noop": command})
-    monkeypatch.setattr(cli, "MODELS", models)
+    patched = dict(cli.MODELS)
+    patched[name] = Model(
+        cfg=cfg_cls, commands={"noop": Command(cfg=cfg_cls, fn=command)}
+    )
+    monkeypatch.setattr(cli, "MODELS", patched)
 
 
 def test_models_list_includes_gpt(capsys):

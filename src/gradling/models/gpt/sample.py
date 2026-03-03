@@ -56,6 +56,8 @@ def _sample_tokens(
 
 
 def sample(cfg: GPTConfig) -> None:
+    """Sample from a GPT."""
+
     if not cfg.run_path:
         msg = "run_path is required for sample command."
         raise ValueError(msg)

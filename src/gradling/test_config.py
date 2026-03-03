@@ -2,7 +2,22 @@ import jax
 import pytest
 from pydantic import ValidationError
 
-from gradling.configs import Config
+from gradling.config import Config, _snake_case
+
+
+def test_snake_case(subtests):
+    cases = [
+        ("Foo", "foo"),
+        ("FooBar", "foo_bar"),
+        ("FooBarBaz", "foo_bar_baz"),
+        ("foobarbaz", "foobarbaz"),
+        ("foo_bar_baz", "foo_bar_baz"),
+    ]
+
+    for input, want in cases:
+        with subtests.test(f"Snakecase {input} -> {want}"):
+            got = _snake_case(input)
+            assert want == got
 
 
 class ExplicitNameConfig(Config, name="test_explicit_config"):
