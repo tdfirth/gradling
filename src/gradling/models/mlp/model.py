@@ -32,21 +32,15 @@ class dot_dict(dict):
         return cls(zip(keys, values))
 
 
-@dataclass
-class Hyperparams:
-    rng_seed: int
-    ctx_length: int
-    vocab_size: int
-    emb_size: int
-    hidden_size: int
-
-
 class MLPConfig(Config):
-    rng_seed: int
-    ctx_length: int
+    rng_seed: int = 42
+    ctx_length: int = 8
+    emb_size: int = 24
+    hidden_size: int = 200
+
+
+class RuntimeMLPConfig(MLPConfig):
     vocab_size: int
-    emb_size: int
-    hidden_size: int
 
 
 @dataclass
@@ -90,7 +84,7 @@ def load_names():
         return names
 
 
-def create_examples(params: Hyperparams, tok: Tokenizer, words: list[str]):
+def create_examples(params: MLPConfig, tok: Tokenizer, words: list[str]):
     l = params.ctx_length
     examples = []
     for word in words:
@@ -140,7 +134,7 @@ def linear(rng: Iterator, fan_in: int, fan_out: int):
     )
 
 
-def init_weights(params: Hyperparams, rng):
+def init_weights(params: RuntimeMLPConfig, rng):
     return dot_dict(
         emb=random.normal(next(rng), (params.vocab_size, params.emb_size)) * 0.01,
         hidden=[
@@ -159,7 +153,7 @@ def bnorm_state(size: int):
     )
 
 
-def init_state(params: Hyperparams):
+def init_state(params: MLPConfig):
     return dot_dict(
         hidden=[
             bnorm_state(params.hidden_size),
@@ -234,7 +228,7 @@ def sample_one(key, weights, state, ctx):
     return random.categorical(key, logits)
 
 
-def sample(rng, params: Hyperparams, tok: Tokenizer, weights, state, n=5):
+def sample(rng, params: RuntimeMLPConfig, tok: Tokenizer, weights, state, n=5):
     for _ in range(n):
         context = ["."] * params.ctx_length
         result = []
@@ -251,15 +245,11 @@ def sample(rng, params: Hyperparams, tok: Tokenizer, weights, state, n=5):
         print("".join(result))
 
 
-def main() -> None:
+def train(cfg: MLPConfig):
     names = load_names()
     tok = Tokenizer.from_list(names)
-    params = Hyperparams(
-        rng_seed=42,
-        ctx_length=8,
-        vocab_size=tok.vocab_size,
-        emb_size=24,
-        hidden_size=200,
+    params = RuntimeMLPConfig.model_validate(
+        cfg.model_dump() | {"vocab_size": tok.vocab_size}
     )
     rng = make_rng(params.rng_seed)
     xs, ys = create_examples(params, tok, names)

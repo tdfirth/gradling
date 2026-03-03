@@ -1,16 +1,19 @@
-from typing import NamedTuple
-
 from flax import nnx
 
+from gradling.config import Config
 
-class Config(NamedTuple):
+
+class BigramConfig(Config):
     seed: int
-    n_vocab: int
     n_emb: int
 
 
+class RuntimeBigramConfig(BigramConfig):
+    n_vocab: int
+
+
 class Bigram(nnx.Module):
-    def __init__(self, cfg: Config):
+    def __init__(self, cfg: RuntimeBigramConfig):
         self.cfg = cfg
         self.emb = nnx.Embed(
             num_embeddings=cfg.n_vocab, features=cfg.n_emb, rngs=nnx.Rngs(cfg.seed)
