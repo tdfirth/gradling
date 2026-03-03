@@ -12,6 +12,7 @@ wheels/
 # Tools
 .ruff_cache/
 .pytest_cache/
+.jax_cache/
 
 # Gradling
 experiments/

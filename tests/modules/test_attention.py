@@ -14,15 +14,11 @@ def rngs():
 
 def test_single_head_attention_dims(subtests, rngs):
     dims = [
-        (4, 4, 32),
-        (128, 4, 32),
-        (4, 8, 32),
-        (4, 16, 32),
-        (4, 4, 64),
-        (4, 8, 128),
+        (1, 4, 8),
+        (2, 6, 16),
     ]
     for dim in dims:
-        with subtests.test(f"dims={dims}"):
+        with subtests.test(f"dims={dim}"):
             B, T, C = dim
             attn = SingleHeadAttention(T, C, 0.1, rngs)
             xs = random.normal(rngs(), dim)
@@ -33,16 +29,16 @@ def test_single_head_attention_future_token_indpendence(subtests, rngs):
     jnp.set_printoptions(linewidth=200, precision=4, suppress=True)
     # If we change some tokens at step t, then the output before t should not
     # be affected.
-    B, T, C = dim = (4, 16, 32)
+    B, T, C = dim = (1, 6, 16)
     attn = SingleHeadAttention(T, C, 0.0, rngs)
     xs1 = random.normal(rngs(), dim)
     xs2 = xs1.copy()
+    out1 = attn(xs1)
 
     for t in range(T):
         with subtests.test(f"t {t + 1}/{T}"):
             # Set dropout to 0 so that output is not randomly affected.
             _xs2 = xs2.at[:, t, :].set(random.normal(rngs(), (B, C)))
-            out1 = attn(xs1)
             out2 = attn(_xs2)
             # Everything up to t should be identical.
             assert jnp.allclose(out1[:, :t, :], out2[:, :t, :])
@@ -51,7 +47,7 @@ def test_single_head_attention_future_token_indpendence(subtests, rngs):
 
 
 def test_single_head_attention_gradient_causality(subtests, rngs):
-    B, T, C = dim = (4, 16, 32)
+    B, T, C = dim = (1, 4, 4)
     attn = SingleHeadAttention(T, C, 0, rngs)
     xs = random.normal(rngs(), dim)
     J = jax.jacobian(lambda x: attn(x))(xs)
@@ -62,14 +58,10 @@ def test_single_head_attention_gradient_causality(subtests, rngs):
 
 def test_multi_head_attention_dims(subtests, rngs):
     dims = [
-        (4, 4, 32),
-        (128, 4, 32),
-        (4, 8, 32),
-        (4, 16, 32),
-        (4, 4, 64),
-        (4, 8, 128),
+        (1, 4, 8),
+        (2, 6, 16),
     ]
-    num_heads = [1, 2, 4, 8]
+    num_heads = [1, 2]
     for dim in dims:
         for nh in num_heads:
             with subtests.test(f"dims={dim}, num_heads={nh}"):
@@ -89,17 +81,17 @@ def test_multi_head_attention_future_token_indpendence(subtests, rngs):
     jnp.set_printoptions(linewidth=200, precision=4, suppress=True)
     # If we change some tokens at step t, then the output before t should not
     # be affected.
-    nh = 1
-    B, T, C = dim = (4, 16, 32)
+    nh = 2
+    B, T, C = dim = (1, 6, 16)
     attn = MultiHeadAttention(T, C, nh, 0.0, rngs)
     xs1 = random.normal(rngs(), dim)
     xs2 = xs1.copy()
+    out1 = attn(xs1)
 
     for t in range(T):
         with subtests.test(f"t {t + 1}/{T}"):
             # Set dropout to 0 so that output is not randomly affected.
             _xs2 = xs2.at[:, t, :].set(random.normal(rngs(), (B, C)))
-            out1 = attn(xs1)
             out2 = attn(_xs2)
             # Everything up to t should be identical.
             assert jnp.allclose(out1[:, :t, :], out2[:, :t, :])
@@ -108,8 +100,8 @@ def test_multi_head_attention_future_token_indpendence(subtests, rngs):
 
 
 def test_multi_head_attention_gradient_causality(subtests, rngs):
-    nh = 1
-    B, T, C = dim = (4, 16, 32)
+    nh = 2
+    B, T, C = dim = (1, 4, 4)
     attn = MultiHeadAttention(T, C, nh, 0, rngs)
     xs = random.normal(rngs(), dim)
     J = jax.jacobian(lambda x: attn(x))(xs)

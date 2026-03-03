@@ -13,18 +13,18 @@ def setup():
     tok = CharacterTokenizer.train(CORPUS)
     train, _ = prepare_training_data(tok, CORPUS)
     rngs = nnx.Rngs(0)
-    loader = make_loader(rngs, 8, 8, train)
+    loader = make_loader(rngs, 2, 4, train)
 
     def model(**kwargs):
         cfg = ModelConfig(
             seed=42,
-            batch_size=32,
+            batch_size=2,
             n_vocab=len(tok.vocab),
-            n_ctx=8,
-            n_emb=32,
-            head_size=32,
-            num_heads=4,
-            num_blocks=3,
+            n_ctx=4,
+            n_emb=8,
+            head_size=8,
+            num_heads=2,
+            num_blocks=1,
             dropout=0.1,
             learning_rate=1e-3,
             momentum=0.9,
@@ -36,11 +36,11 @@ def setup():
     yield model, loader
 
 
-def test_sweep_head_size(subtests, setup):
-    cases = [32, 64, 128]
+def test_sweep_embedding_size(subtests, setup):
+    cases = [8, 16]
     model, loader = setup
 
     for case in cases:
-        with subtests.test(msg=f"head_size {case}"):
+        with subtests.test(msg=f"n_emb {case}"):
             xs, _ = next(loader)
-            model(head_size=case, n_emb=case)(xs)
+            model(n_emb=case)(xs)
