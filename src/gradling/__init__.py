@@ -6,4 +6,4 @@ from gradling import cli  # noqa: E402
 
 
 def main() -> None:
-    cli.app()
+    raise SystemExit(cli.main())

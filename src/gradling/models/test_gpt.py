@@ -2,7 +2,7 @@ import pytest
 from flax import nnx
 
 from gradling.data import make_loader, prepare_training_data
-from gradling.models.gpt import GPT, Config
+from gradling.models.gpt import GPT, ModelConfig
 from gradling.tokenizers import CharacterTokenizer
 
 CORPUS = "The quick brown fox jumped over the lazy dog."
@@ -16,7 +16,7 @@ def setup():
     loader = make_loader(rngs, 8, 8, train)
 
     def model(**kwargs):
-        cfg = Config(
+        cfg = ModelConfig(
             seed=42,
             batch_size=32,
             n_vocab=len(tok.vocab),

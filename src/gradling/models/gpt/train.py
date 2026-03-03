@@ -1,19 +1,16 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import asdict
-from typing import Any, cast
+from typing import Any
 
 import jax
 import optax
 from flax import nnx
 
-from gradling.configs import pipeline
-from gradling.configs.transformer import Transformer
 from gradling.data import prepare_training_data, sample_batch
-from gradling.models.gpt import GPT
-from gradling.models.gpt import Config as GPTConfig
-from gradling.pipelines.transformer.common import build_model_config, load_corpus, log
+from gradling.models.gpt.common import build_model_config, load_corpus, log
+from gradling.models.gpt.config import GPTConfig
+from gradling.models.gpt.model import GPT, ModelConfig
 from gradling.run import Run
 from gradling.tokenizers import CharacterTokenizer
 
@@ -26,7 +23,7 @@ def _loss_fn(model: GPT, xs: jax.Array, ys: jax.Array):
 
 @nnx.jit(static_argnums=(0,))
 def _train_step(
-    cfg: GPTConfig,
+    cfg: ModelConfig,
     model: GPT,
     optimizer: nnx.Optimizer,
     metrics: nnx.MultiMetric,
@@ -42,7 +39,7 @@ def _train_step(
 
 @nnx.jit(static_argnums=(0,))
 def _eval_step(
-    cfg: GPTConfig,
+    cfg: ModelConfig,
     model: GPT,
     metrics: nnx.MultiMetric,
     rngs: nnx.Rngs,
@@ -55,7 +52,7 @@ def _eval_step(
 
 def _run_training_loop(
     run: Run,
-    cfg: GPTConfig,
+    cfg: ModelConfig,
     model: GPT,
     optimizer: nnx.Optimizer,
     metrics: nnx.MultiMetric,
@@ -91,8 +88,7 @@ def _run_training_loop(
     run.checkpoint("final", model)
 
 
-@pipeline(Transformer)
-def train(cfg: Transformer) -> None:
+def train(cfg: GPTConfig) -> None:
     rngs = nnx.Rngs(cfg.seed)
 
     log.info("Loading data")
@@ -126,8 +122,14 @@ def train(cfg: Transformer) -> None:
         log.info("Dry run, exiting before training")
         return
 
-    run_cfg = asdict(cast(Any, cfg))
-    run_cfg["n_vocab"] = len(tok.vocab)
+    run_cfg = model_cfg._asdict()
+    run_cfg.update(
+        {
+            "dry_run": cfg.dry_run,
+            "run_path": cfg.run_path,
+            "checkpoint_label": cfg.checkpoint_label,
+        }
+    )
     run = Run.from_config(run_cfg, family=cfg.config_name())
 
     def log_loss(metric: str, value: Any):

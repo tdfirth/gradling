@@ -7,7 +7,7 @@ from jax import numpy as jnp
 from gradling.modules import FeedForward, LayerNorm, MultiHeadAttention
 
 
-class Config(NamedTuple):
+class ModelConfig(NamedTuple):
     seed: int
     batch_size: int
     n_vocab: int
@@ -44,7 +44,6 @@ class AttentionBlock(nnx.Module):
         self.ln2 = LayerNorm(n_emb, rngs)
 
     def __call__(self, x: jax.Array):
-        # Residual Connection
         x = self.ln1(x)
         x = x + self.sa_heads(x)
         x = self.ln2(x)
@@ -53,7 +52,7 @@ class AttentionBlock(nnx.Module):
 
 
 class GPT(nnx.Module):
-    def __init__(self, cfg: Config):
+    def __init__(self, cfg: ModelConfig):
         self.cfg = cfg
         rngs = nnx.Rngs(cfg.seed)
         self.tok_emb = nnx.Embed(

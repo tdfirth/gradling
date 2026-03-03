@@ -1,9 +1,7 @@
-from __future__ import annotations
-
 from gradling import logger
-from gradling.configs.transformer import Transformer
 from gradling.data import SHAKESPEARE
-from gradling.models.gpt import Config as GPTConfig
+from gradling.models.gpt.config import GPTConfig
+from gradling.models.gpt.model import ModelConfig
 
 log = logger.get(__name__)
 
@@ -13,8 +11,8 @@ def load_corpus() -> str:
         return f.read()
 
 
-def build_model_config(cfg: Transformer, n_vocab: int) -> GPTConfig:
-    return GPTConfig(
+def build_model_config(cfg: GPTConfig, n_vocab: int) -> ModelConfig:
+    return ModelConfig(
         seed=cfg.seed,
         batch_size=cfg.batch_size,
         n_vocab=n_vocab,

@@ -8,12 +8,10 @@ from flax import nnx
 from jax import numpy as jnp
 from jax import random
 
-from gradling.configs import pipeline
-from gradling.configs.transformer import Transformer
 from gradling.data import make_loader, prepare_training_data
-from gradling.models.gpt import GPT
-from gradling.models.gpt import Config as GPTConfig
-from gradling.pipelines.transformer.common import load_corpus, log
+from gradling.models.gpt.common import load_corpus, log
+from gradling.models.gpt.config import GPTConfig
+from gradling.models.gpt.model import GPT, ModelConfig
 from gradling.run import Run
 from gradling.tokenizers import CharacterTokenizer, Tokenizer
 
@@ -57,29 +55,30 @@ def _sample_tokens(
         print("")
 
 
-@pipeline(Transformer)
-def sample(cfg: Transformer) -> None:
+def sample(cfg: GPTConfig) -> None:
     if not cfg.run_path:
-        msg = "run_path is required for sample pipeline."
+        msg = "run_path is required for sample command."
         raise ValueError(msg)
 
     log.info("Loading run")
     run = Run.from_path(Path(cfg.run_path))
     saved = run.cfg
 
-    seed = int(saved.get("seed", cfg.seed))
-    batch_size = int(saved.get("batch_size", cfg.batch_size))
-    n_ctx = int(saved.get("n_ctx", cfg.n_ctx))
-    n_emb = int(saved.get("n_emb", cfg.n_emb))
-    head_size = int(saved.get("head_size", cfg.head_size))
-    num_heads = int(saved.get("num_heads", cfg.num_heads))
-    num_blocks = int(saved.get("num_blocks", cfg.num_blocks))
-    dropout = float(saved.get("dropout", cfg.dropout))
-    learning_rate = float(saved.get("learning_rate", cfg.learning_rate))
-    momentum = float(saved.get("momentum", cfg.momentum))
-    train_steps = int(saved.get("train_steps", cfg.train_steps))
-
-    rngs = nnx.Rngs(seed)
+    model_cfg = ModelConfig(
+        seed=int(saved["seed"]),
+        batch_size=int(saved["batch_size"]),
+        n_vocab=int(saved["n_vocab"]),
+        n_ctx=int(saved["n_ctx"]),
+        n_emb=int(saved["n_emb"]),
+        head_size=int(saved["head_size"]),
+        num_heads=int(saved["num_heads"]),
+        num_blocks=int(saved["num_blocks"]),
+        dropout=float(saved["dropout"]),
+        learning_rate=float(saved["learning_rate"]),
+        momentum=float(saved["momentum"]),
+        train_steps=int(saved["train_steps"]),
+    )
+    rngs = nnx.Rngs(model_cfg.seed)
 
     log.info("Loading data")
     corpus = load_corpus()
@@ -88,23 +87,9 @@ def sample(cfg: Transformer) -> None:
     tok = CharacterTokenizer.train(corpus)
     log.info("Preparing data loader")
     _, dev_data = prepare_training_data(tok, corpus)
-    loader = make_loader(rngs, batch_size, n_ctx, dev_data)
+    loader = make_loader(rngs, model_cfg.batch_size, model_cfg.n_ctx, dev_data)
 
     log.info("Initializing model")
-    model_cfg = GPTConfig(
-        seed=seed,
-        batch_size=batch_size,
-        n_vocab=len(tok.vocab),
-        n_ctx=n_ctx,
-        n_emb=n_emb,
-        head_size=head_size,
-        num_heads=num_heads,
-        num_blocks=num_blocks,
-        dropout=dropout,
-        learning_rate=learning_rate,
-        momentum=momentum,
-        train_steps=train_steps,
-    )
     model = GPT(model_cfg)
 
     log.info("Restoring weights")
