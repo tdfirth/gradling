@@ -1,7 +1,7 @@
 from gradling.config import Config
 
 
-class GPTConfig(Config, name="gpt"):
+class GPTConfig(Config):
     seed: int = 42
     batch_size: int = 32
     n_ctx: int = 8

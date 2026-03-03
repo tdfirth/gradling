@@ -20,10 +20,6 @@ def test_snake_case(subtests):
             assert want == got
 
 
-class ExplicitNameConfig(Config, name="test_explicit_config"):
-    value: int = 1
-
-
 class SnakeCaseFallbackConfig(Config):
     value: int = 1
 
@@ -38,10 +34,6 @@ class MultiLevelMid(MultiLevelBase):
 
 class MultiLevelLeaf(MultiLevelMid):
     leaf_value: int = 3
-
-
-def test_config_name_with_explicit_name():
-    assert ExplicitNameConfig.config_name() == "test_explicit_config"
 
 
 def test_config_name_uses_snake_case_fallback():

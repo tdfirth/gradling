@@ -16,14 +16,9 @@ class Config(BaseModel):
     model_config = ConfigDict(extra="forbid")
     __config_name__: ClassVar[str]
 
-    def __init_subclass__(cls, *, name: str | None = None, **kwargs: Any) -> None:
+    def __init_subclass__(cls, **kwargs: Any) -> None:
         super().__init_subclass__(**kwargs)
-        key = (name or _snake_case(cls.__name__)).strip()
-        if not key:
-            msg = f"{cls.__name__} resolved to an empty config name"
-            raise ValueError(msg)
-
-        cls.__config_name__ = key
+        cls.__config_name__ = _snake_case(cls.__name__)
         jax.tree_util.register_pytree_node_class(cls)
 
     @classmethod
