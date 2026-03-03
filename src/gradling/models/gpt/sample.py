@@ -11,7 +11,7 @@ from jax import random
 from gradling.data import make_loader, prepare_training_data
 from gradling.models.gpt.common import load_corpus, log
 from gradling.models.gpt.config import GPTConfig
-from gradling.models.gpt.model import GPT, ModelConfig
+from gradling.models.gpt.model import GPT
 from gradling.run import Run
 from gradling.tokenizers import CharacterTokenizer, Tokenizer
 
@@ -64,23 +64,7 @@ def sample(cfg: GPTConfig) -> None:
 
     log.info("Loading run")
     run = Run.from_path(Path(cfg.run_path))
-    saved = run.cfg
-
-    model_cfg = ModelConfig(
-        seed=int(saved["seed"]),
-        batch_size=int(saved["batch_size"]),
-        n_vocab=int(saved["n_vocab"]),
-        n_ctx=int(saved["n_ctx"]),
-        n_emb=int(saved["n_emb"]),
-        head_size=int(saved["head_size"]),
-        num_heads=int(saved["num_heads"]),
-        num_blocks=int(saved["num_blocks"]),
-        dropout=float(saved["dropout"]),
-        learning_rate=float(saved["learning_rate"]),
-        momentum=float(saved["momentum"]),
-        train_steps=int(saved["train_steps"]),
-    )
-    rngs = nnx.Rngs(model_cfg.seed)
+    rngs = nnx.Rngs(cfg.seed)
 
     log.info("Loading data")
     corpus = load_corpus()
@@ -89,10 +73,10 @@ def sample(cfg: GPTConfig) -> None:
     tok = CharacterTokenizer.train(corpus)
     log.info("Preparing data loader")
     _, dev_data = prepare_training_data(tok, corpus)
-    loader = make_loader(rngs, model_cfg.batch_size, model_cfg.n_ctx, dev_data)
+    loader = make_loader(rngs, cfg.batch_size, cfg.n_ctx, dev_data)
 
     log.info("Initializing model")
-    model = GPT(model_cfg)
+    model = GPT(cfg, len(tok.vocab))
 
     log.info("Restoring weights")
     run.load_checkpoint(cfg.checkpoint_label, model)

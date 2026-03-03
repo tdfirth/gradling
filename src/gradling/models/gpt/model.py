@@ -1,25 +1,9 @@
-from typing import NamedTuple
-
 import jax
 from flax import nnx
 from jax import numpy as jnp
 
+from gradling.models.gpt import GPTConfig
 from gradling.modules import FeedForward, LayerNorm, MultiHeadAttention
-
-
-class ModelConfig(NamedTuple):
-    seed: int
-    batch_size: int
-    n_vocab: int
-    n_ctx: int
-    n_emb: int
-    head_size: int
-    num_heads: int
-    num_blocks: int
-    dropout: float
-    learning_rate: float
-    momentum: float
-    train_steps: int
 
 
 class AttentionBlock(nnx.Module):
@@ -52,12 +36,11 @@ class AttentionBlock(nnx.Module):
 
 
 class GPT(nnx.Module):
-    def __init__(self, cfg: ModelConfig):
+    def __init__(self, cfg: GPTConfig, n_vocab: int):
         self.cfg = cfg
+        self.n_vocab = n_vocab
         rngs = nnx.Rngs(cfg.seed)
-        self.tok_emb = nnx.Embed(
-            num_embeddings=cfg.n_vocab, features=cfg.n_emb, rngs=rngs
-        )
+        self.tok_emb = nnx.Embed(num_embeddings=n_vocab, features=cfg.n_emb, rngs=rngs)
         self.pos_emb = nnx.Embed(
             num_embeddings=cfg.n_ctx, features=cfg.n_emb, rngs=rngs
         )
@@ -76,7 +59,7 @@ class GPT(nnx.Module):
             nnx.LayerNorm(cfg.n_emb, rngs=rngs),
         )
         self.lm_head = nnx.Linear(
-            in_features=cfg.n_emb, out_features=cfg.n_vocab, rngs=rngs
+            in_features=cfg.n_emb, out_features=n_vocab, rngs=rngs
         )
 
     def __call__(self, x: jax.Array):
