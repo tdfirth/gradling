@@ -39,43 +39,6 @@ class SingleHeadAttention(nnx.Module):
         v = self.value(x)
         wei = jnp.einsum("bqc,bkc->bqk", q, k) * self.n_embd**-0.5
         wei = jnp.where(self.mask[...], -jnp.inf, wei)
-        wei = nnx.softmax(wei)
+        wei = nnx.softmax(wei, axis=-1)
         wei = self.dropout(wei)
         return self.proj(wei @ v)
-
-
-# TODO karpathy only had num_heads, and the single head size is governed by the
-# embedding dimenson divided by the number of heads... here we are instead
-# allowing those things to be independent, which means we're projecting from
-# embedding size to whatever the head size is, and then back again... I have no
-# idea what is standard yet.
-# One source of the deviation is that I made single head attention first, where
-# it seemed we wanted this ability, but perhaps that is not standard in multi
-# head attention?
-class MultiHeadAttention(nnx.Module):
-    def __init__(
-        self,
-        ctx_len: int,
-        n_embd: int,
-        num_heads: int,
-        dropout: float,
-        rngs: nnx.Rngs,
-    ):
-        assert n_embd % num_heads == 0
-        self.heads = nnx.List(
-            [
-                SingleHeadAttention(
-                    ctx_len, n_embd, dropout, rngs, head_size=n_embd // num_heads
-                )
-                for _ in range(num_heads)
-            ]
-        )
-        self.proj = nnx.Linear(in_features=n_embd, out_features=n_embd, rngs=rngs)
-        self.dropout = nnx.Dropout(dropout, rngs=rngs)
-
-    def __call__(self, x: jax.Array):
-        xs = [h(x) for h in self.heads]
-        x = jnp.concat(xs, axis=-1)
-        x = self.proj(x)
-        x = self.dropout(x)
-        return x
