@@ -1,4 +1,3 @@
-import jax
 import pytest
 from pydantic import ValidationError
 
@@ -52,15 +51,14 @@ def test_extra_fields_are_rejected():
         MultiLevelLeaf.model_validate({"unknown_field": 1})
 
 
-def test_subclass_and_grandchild_are_registered_as_pytrees():
-    mid = MultiLevelMid(base_value=2, mid_value=3)
-    leaf = MultiLevelLeaf(base_value=2, mid_value=3, leaf_value=4)
+def test_config_is_hashable():
+    a = MultiLevelLeaf(base_value=2, mid_value=3, leaf_value=4)
+    b = MultiLevelLeaf(base_value=2, mid_value=3, leaf_value=4)
+    assert hash(a) == hash(b)
+    assert a == b
 
-    assert jax.tree_util.tree_leaves(mid) == [2, 3]
-    assert jax.tree_util.tree_leaves(leaf) == [2, 3, 4]
 
-    mapped = jax.tree_util.tree_map(lambda x: x + 1, leaf)
-    assert isinstance(mapped, MultiLevelLeaf)
-    assert mapped.base_value == 3
-    assert mapped.mid_value == 4
-    assert mapped.leaf_value == 5
+def test_config_hash_differs_for_different_values():
+    a = MultiLevelLeaf(base_value=2, mid_value=3, leaf_value=4)
+    b = MultiLevelLeaf(base_value=2, mid_value=3, leaf_value=5)
+    assert a != b

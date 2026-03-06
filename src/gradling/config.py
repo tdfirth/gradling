@@ -3,7 +3,6 @@ from __future__ import annotations
 import re
 from typing import Any, ClassVar
 
-import jax
 from pydantic import BaseModel, ConfigDict
 
 
@@ -19,7 +18,6 @@ class Config(BaseModel):
     def __init_subclass__(cls, **kwargs: Any) -> None:
         super().__init_subclass__(**kwargs)
         cls.__config_name__ = _snake_case(cls.__name__)
-        jax.tree_util.register_pytree_node_class(cls)
 
     @classmethod
     def config_name(cls) -> str:
@@ -32,13 +30,3 @@ class Config(BaseModel):
         if not isinstance(other, type(self)):
             return NotImplemented
         return self.model_dump() == other.model_dump()
-
-    def tree_flatten(self):
-        names = tuple(type(self).model_fields.keys())
-        values = tuple(getattr(self, name) for name in names)
-        return values, names
-
-    @classmethod
-    def tree_unflatten(cls, names, values):
-        data = dict(zip(names, values))
-        return cls.model_validate(data)
