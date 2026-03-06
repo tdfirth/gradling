@@ -1,0 +1,67 @@
+from __future__ import annotations
+
+import os
+from typing import Any, Protocol
+
+from gradling import logger
+from gradling.dir import ROOT
+
+log = logger.get(__name__)
+
+
+class MetricSink(Protocol):
+    def track(self, metrics: dict[str, Any], step: int) -> None: ...
+    def close(self) -> None: ...
+
+
+class LogSink:
+    def track(self, metrics: dict[str, Any], step: int) -> None:
+        for k, v in metrics.items():
+            log.info(f"[step {step}] {k}: {v:.4f}")
+
+    def close(self) -> None:
+        pass
+
+
+class WandbSink:
+    def __init__(self, config: dict[str, Any]) -> None:
+        import wandb
+
+        self.run = wandb.init(entity="tdfirth", project="Gradling", config=config)
+
+    def track(self, metrics: dict[str, Any], step: int) -> None:
+        self.run.log(metrics, step=step)
+
+    def close(self) -> None:
+        self.run.finish()
+
+
+def _load_dotenv() -> None:
+    env_path = ROOT / ".env"
+    if not env_path.exists():
+        return
+    for line in env_path.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        os.environ.setdefault(key.strip(), value.strip())
+
+
+class Metrics:
+    def __init__(self, config: dict[str, Any]) -> None:
+        self.sinks: list[MetricSink] = [LogSink()]
+        _load_dotenv()
+        if os.environ.get("WANDB_API_KEY"):
+            try:
+                self.sinks.append(WandbSink(config))
+            except Exception:
+                log.warning("Failed to initialize wandb sink", exc_info=True)
+
+    def track(self, metrics: dict[str, Any], step: int) -> None:
+        for sink in self.sinks:
+            sink.track(metrics, step)
+
+    def close(self) -> None:
+        for sink in self.sinks:
+            sink.close()

@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-from collections.abc import Callable
-from typing import Any
-
 import jax
 import optax
 from flax import nnx
@@ -59,12 +56,7 @@ def _run_training_loop(
     rngs: nnx.Rngs,
     train_data: jax.Array,
     dev_data: jax.Array,
-    metric_sinks: list[Callable[[str, Any], None]],
 ) -> None:
-    def track(metric: str, value: Any):
-        for sink in metric_sinks:
-            sink(metric, value)
-
     eval_cfg = cfg.model_copy(update={"batch_size": 512})
     for step in range(cfg.train_steps):
         if step % 100 == 0:
@@ -74,14 +66,18 @@ def _run_training_loop(
         _train_step(cfg, model, optimizer, metrics, rngs, train_data)
 
         if step % 100 == 0:
-            for metric, value in metrics.compute().items():
-                track(f"train_{metric}", value)
+            run.track(
+                {f"train_{k}": v for k, v in metrics.compute().items()},
+                step=step,
+            )
             metrics.reset()
 
             model.eval()
             _eval_step(eval_cfg, model, metrics, rngs, dev_data)
-            for metric, value in metrics.compute().items():
-                track(f"dev_{metric}", value)
+            run.track(
+                {f"dev_{k}": v for k, v in metrics.compute().items()},
+                step=step,
+            )
             metrics.reset()
 
     log.info("Done training, saving weights")
@@ -132,9 +128,6 @@ def train(cfg: GPTConfig) -> None:
     )
     run = Run.from_config(run_cfg, family=cfg.config_name())
 
-    def log_loss(metric: str, value: Any):
-        log.info(f"{metric}: {value:.4f}")
-
     _run_training_loop(
         run,
         cfg,
@@ -144,6 +137,5 @@ def train(cfg: GPTConfig) -> None:
         rngs,
         train_data,
         dev_data,
-        [log_loss],
     )
     run.finalize()

@@ -1,12 +1,13 @@
 import json
 from datetime import datetime
 from pathlib import Path
-from typing import Self
+from typing import Any, Self
 
 import orbax.checkpoint as ocp
 from flax import nnx
 
 from gradling.data import ROOT
+from gradling.metrics import Metrics
 
 EXPERIMENTS = ROOT / "experiments"
 
@@ -16,9 +17,9 @@ def _cfg_json(path: Path) -> Path:
 
 
 class Run:
-    # TODO config system for arbitrary config
     def __init__(self, path: Path, cfg: dict):
         self.cfg = cfg
+        self.metrics = Metrics(cfg)
         self.checkpoints = path / "checkpoints"
         self.checkpoints.mkdir(parents=True, exist_ok=True)
         self.checkpointer = ocp.StandardCheckpointer()
@@ -35,8 +36,7 @@ class Run:
     @classmethod
     def from_path(cls, path: Path) -> Self:
         cfg = json.loads(_cfg_json(path).read_text())
-        run = cls(path, cfg)
-        return run
+        return cls(path, cfg)
 
     # TODO handle optimizer state as well as weights.
     def checkpoint(self, label: str, model: nnx.Module):
@@ -50,5 +50,9 @@ class Run:
         to_restore = self.checkpointer.restore(checkpoint_path.absolute(), target=state)
         nnx.update(model, to_restore)
 
+    def track(self, metrics: dict[str, Any], step: int) -> None:
+        self.metrics.track(metrics, step)
+
     def finalize(self):
         self.checkpointer.wait_until_finished()
+        self.metrics.close()

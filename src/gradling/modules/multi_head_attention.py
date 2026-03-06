@@ -50,7 +50,7 @@ class MultiHeadAttention(nnx.Module):
         query = query.reshape(B, T, self.num_heads, self.head_dim)
         value = value.reshape(B, T, self.num_heads, self.head_dim)
 
-        # (B, Q, num_heads, head_dim) @ (B, K, num_heads, head_dim) -> (B, num_heads, Q, K)
+        # (B, Q, nh, hd) @ (B, K, nh, hd) -> (B, nh, Q, K)
         wei = jnp.einsum("bqhe,bkhe->bhqk", query, key) * (1 / jnp.sqrt(self.head_dim))
 
         # Causal mask (e.g. q at 1 can only attend to k at 0 and 1).
@@ -59,7 +59,7 @@ class MultiHeadAttention(nnx.Module):
         # Turn wei into a probability distribution along K.
         wei = nnx.softmax(wei, axis=-1)
 
-        # (B, num_heads, Q, K) @ (B, K, num_heads, head_dim) -> (B, Q, num_heads, head_dim)
+        # (B, nh, Q, K) @ (B, K, nh, hd) -> (B, Q, nh, hd)
         x = jnp.einsum("bhqk,bkhe->bqhe", wei, value)
 
         x = x.reshape(B, T, C)
