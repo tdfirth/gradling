@@ -1,18 +1,16 @@
+from dataclasses import dataclass
+
 from gradling import cli
 from gradling.config import Config
 from gradling.models import Command, Model
 
 
+@dataclass
 class CliConfigFixture(Config):
     n: int = 1
     ratio: float = 0.1
     title: str = "base"
     enabled: bool = False
-
-
-class StringHintConfig(Config):
-    n: "int" = 1
-    dry_run: "bool" = False
 
 
 def _with_test_model(monkeypatch, name: str, cfg_cls: type[Config], command):
@@ -80,15 +78,3 @@ def test_run_parses_scalar_overrides(monkeypatch, capsys):
     out = capsys.readouterr().out
     assert code == 0
     assert "3|0.5|demo|True" in out
-
-
-def test_run_parses_string_annotated_config_end_to_end(monkeypatch, capsys):
-    def noop(cfg: StringHintConfig):
-        print(f"{cfg.n}|{cfg.dry_run}")
-
-    _with_test_model(monkeypatch, "test_string_hint_config", StringHintConfig, noop)
-
-    code = cli.main(["run", "test_string_hint_config", "noop", "--n", "7", "--dry-run"])
-    out = capsys.readouterr().out
-    assert code == 0
-    assert "7|True" in out

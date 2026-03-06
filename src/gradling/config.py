@@ -1,32 +1,23 @@
-from __future__ import annotations
-
-import re
-from typing import Any, ClassVar
-
-from pydantic import BaseModel, ConfigDict
+from dataclasses import asdict, dataclass, field, fields, replace
+from typing import cast
 
 
-def _snake_case(name: str) -> str:
-    first_pass = re.sub(r"(.)([A-Z][a-z]+)", r"\1_\2", name)
-    return re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", first_pass).lower()
+def runtime_field[T](default: T, doc: str = "") -> T:
+    return cast(T, field(default=default, metadata={"cli": False, "doc": doc}))
 
 
-class Config(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    __config_name__: ClassVar[str]
-
-    def __init_subclass__(cls, **kwargs: Any) -> None:
-        super().__init_subclass__(**kwargs)
-        cls.__config_name__ = _snake_case(cls.__name__)
-
+@dataclass
+class Config:
     @classmethod
-    def config_name(cls) -> str:
-        return cls.__config_name__
+    def from_dict(cls, d: dict):
+        return cls(**d)
 
-    def __hash__(self) -> int:
-        return hash(tuple(self.model_dump().items()))
+    def to_dict(self) -> dict:
+        return asdict(self)
 
-    def __eq__(self, other: object) -> bool:
-        if not isinstance(other, type(self)):
-            return NotImplemented
-        return self.model_dump() == other.model_dump()
+    def replace(self, **kwargs):
+        return replace(self, **kwargs)
+
+    @property
+    def fields(self):
+        return fields(self)

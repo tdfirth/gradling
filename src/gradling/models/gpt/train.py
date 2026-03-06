@@ -57,7 +57,7 @@ def _run_training_loop(
     train_data: jax.Array,
     dev_data: jax.Array,
 ) -> None:
-    eval_cfg = cfg.model_copy(update={"batch_size": 512})
+    eval_cfg = cfg.replace(batch_size=512)
     for step in range(cfg.train_steps):
         if step % 100 == 0:
             log.info(f"Training for step {step}/{cfg.train_steps}")
@@ -118,7 +118,7 @@ def train(cfg: GPTConfig) -> None:
         log.info("Dry run, exiting before training")
         return
 
-    run_cfg = cfg.model_dump(mode="json")
+    run_cfg = cfg.to_dict()
     run_cfg.update(
         {
             "dry_run": cfg.dry_run,
@@ -126,7 +126,7 @@ def train(cfg: GPTConfig) -> None:
             "checkpoint_label": cfg.checkpoint_label,
         }
     )
-    run = Run.from_config(run_cfg, family=cfg.config_name())
+    run = Run.from_config("gpt", run_cfg)
 
     _run_training_loop(
         run,

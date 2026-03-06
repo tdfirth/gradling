@@ -9,7 +9,7 @@ import jax
 from jax import numpy as jnp
 from jax import random
 
-from gradling.config import Config
+from gradling.config import Config, runtime_field
 from gradling.data import NAMES
 
 
@@ -32,15 +32,13 @@ class dot_dict(dict):
         return cls(zip(keys, values))
 
 
+@dataclass
 class MLPConfig(Config):
     rng_seed: int = 42
     ctx_length: int = 8
     emb_size: int = 24
     hidden_size: int = 200
-
-
-class RuntimeMLPConfig(MLPConfig):
-    vocab_size: int
+    vocab_size: int = runtime_field(0)
 
 
 @dataclass
@@ -134,7 +132,7 @@ def linear(rng: Iterator, fan_in: int, fan_out: int):
     )
 
 
-def init_weights(params: RuntimeMLPConfig, rng):
+def init_weights(params: MLPConfig, rng):
     return dot_dict(
         emb=random.normal(next(rng), (params.vocab_size, params.emb_size)) * 0.01,
         hidden=[
@@ -228,7 +226,7 @@ def sample_one(key, weights, state, ctx):
     return random.categorical(key, logits)
 
 
-def sample(rng, params: RuntimeMLPConfig, tok: Tokenizer, weights, state, n=5):
+def sample(rng, params: MLPConfig, tok: Tokenizer, weights, state, n=5):
     for _ in range(n):
         context = ["."] * params.ctx_length
         result = []
@@ -248,9 +246,7 @@ def sample(rng, params: RuntimeMLPConfig, tok: Tokenizer, weights, state, n=5):
 def train(cfg: MLPConfig):
     names = load_names()
     tok = Tokenizer.from_list(names)
-    params = RuntimeMLPConfig.model_validate(
-        cfg.model_dump() | {"vocab_size": tok.vocab_size}
-    )
+    params = cfg.replace(vocab_size=tok.vocab_size)
     rng = make_rng(params.rng_seed)
     xs, ys = create_examples(params, tok, names)
     train, dev, test = create_datasets(xs, ys)

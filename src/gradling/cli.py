@@ -2,11 +2,10 @@ from __future__ import annotations
 
 import argparse
 import sys
+from dataclasses import fields
 from types import UnionType
 from typing import Any, Union, get_args, get_origin
 
-from pydantic import ValidationError
-from pydantic_core import PydanticUndefined
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
@@ -72,20 +71,17 @@ def _render_config_fields_table(cfg_cls: type[Config]) -> None:
     table.add_column("Flag", style="cyan")
     table.add_column("Type")
     table.add_column("Default")
-    table.add_column("Description")
 
-    for name, field in cfg_cls.model_fields.items():
-        scalar = _normalize_scalar_type(field.annotation)
+    for field in fields(cfg_cls):
+        if field.metadata.get("cli") is False:
+            continue
+        scalar = _normalize_scalar_type(field.type)
         if scalar is None:
             continue
-        default = "<required>"
-        if field.default is not PydanticUndefined:
-            default = repr(field.default)
         table.add_row(
-            f"--{name.replace('_', '-')}",
+            f"--{field.name.replace('_', '-')}",
             scalar.__name__,
-            default,
-            field.description or "-",
+            str(field.default),
         )
 
     console.print(table)
@@ -107,28 +103,24 @@ def _build_command_parser(model_name: str, command: str, cfg_cls: type[Config]):
         prog=f"gradling run {model_name} {command}",
         add_help=True,
     )
-    for name, field in cfg_cls.model_fields.items():
-        scalar = _normalize_scalar_type(field.annotation)
+    for field in fields(cfg_cls):
+        if field.metadata.get("cli") is False:
+            continue
+
+        scalar = _normalize_scalar_type(field.type)
         if scalar is None:
             continue
 
-        help_parts: list[str] = []
-        if field.description:
-            help_parts.append(field.description)
-        if field.default is not PydanticUndefined:
-            help_parts.append(f"default: {field.default!r}")
-
         kwargs: dict[str, Any] = {
-            "dest": name,
+            "dest": field.name,
             "default": argparse.SUPPRESS,
-            "help": "; ".join(help_parts) or None,
         }
         if scalar is bool:
             kwargs["action"] = argparse.BooleanOptionalAction
         else:
             kwargs["type"] = scalar
 
-        parser.add_argument(f"--{name.replace('_', '-')}", **kwargs)
+        parser.add_argument(f"--{field.name.replace('_', '-')}", **kwargs)
     return parser
 
 
@@ -185,13 +177,7 @@ def _handle_run(args: list[str]) -> int:
     except SystemExit as exc:
         return exc.code if isinstance(exc.code, int) else 1
 
-    try:
-        cfg = spec.cfg.model_validate(vars(parsed))
-    except ValidationError as exc:
-        return _fail(
-            f"Invalid config for `{model_name}`: {exc}",
-            hint="Use `--help` to inspect accepted fields.",
-        )
+    cfg = spec.cfg(vars(parsed))
 
     try:
         runner.fn(cfg)

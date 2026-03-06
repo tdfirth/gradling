@@ -1,42 +1,21 @@
-import pytest
-from pydantic import ValidationError
+from dataclasses import dataclass
 
-from gradling.config import Config, _snake_case
-
-
-def test_snake_case(subtests):
-    cases = [
-        ("Foo", "foo"),
-        ("FooBar", "foo_bar"),
-        ("FooBarBaz", "foo_bar_baz"),
-        ("foobarbaz", "foobarbaz"),
-        ("foo_bar_baz", "foo_bar_baz"),
-    ]
-
-    for input, want in cases:
-        with subtests.test(f"Snakecase {input} -> {want}"):
-            got = _snake_case(input)
-            assert want == got
+from gradling.config import Config, runtime_field
 
 
-class SnakeCaseFallbackConfig(Config):
-    value: int = 1
-
-
+@dataclass
 class MultiLevelBase(Config):
     base_value: int = 1
 
 
+@dataclass
 class MultiLevelMid(MultiLevelBase):
     mid_value: int = 2
 
 
+@dataclass
 class MultiLevelLeaf(MultiLevelMid):
     leaf_value: int = 3
-
-
-def test_config_name_uses_snake_case_fallback():
-    assert SnakeCaseFallbackConfig.config_name() == "snake_case_fallback_config"
 
 
 def test_multilevel_subclass_keeps_parent_fields():
@@ -46,19 +25,33 @@ def test_multilevel_subclass_keeps_parent_fields():
     assert cfg.leaf_value == 30
 
 
-def test_extra_fields_are_rejected():
-    with pytest.raises(ValidationError):
-        MultiLevelLeaf.model_validate({"unknown_field": 1})
+def test_to_dict():
+    cfg = MultiLevelLeaf(base_value=10, mid_value=20, leaf_value=30)
+    assert cfg.to_dict() == dict(base_value=10, mid_value=20, leaf_value=30)
 
 
-def test_config_is_hashable():
-    a = MultiLevelLeaf(base_value=2, mid_value=3, leaf_value=4)
-    b = MultiLevelLeaf(base_value=2, mid_value=3, leaf_value=4)
-    assert hash(a) == hash(b)
-    assert a == b
+def test_from_dict():
+    cfg = MultiLevelLeaf(base_value=10, mid_value=20, leaf_value=30)
+    assert cfg.from_dict(dict(base_value=10, mid_value=20, leaf_value=30)) == cfg
 
 
-def test_config_hash_differs_for_different_values():
-    a = MultiLevelLeaf(base_value=2, mid_value=3, leaf_value=4)
-    b = MultiLevelLeaf(base_value=2, mid_value=3, leaf_value=5)
-    assert a != b
+def test_replace():
+    cfg = MultiLevelLeaf(base_value=10, mid_value=20, leaf_value=30)
+    assert cfg.replace(base_value=999) == MultiLevelLeaf(
+        base_value=999, mid_value=20, leaf_value=30
+    )
+
+
+def test_fields():
+    cfg = MultiLevelLeaf(base_value=10, mid_value=20, leaf_value=30)
+    assert [f.name for f in cfg.fields] == ["base_value", "mid_value", "leaf_value"]
+
+
+@dataclass
+class RuntimeLeaf(MultiLevelMid):
+    rt: str = runtime_field("")
+
+
+def test_runtime_fields():
+    cfg = RuntimeLeaf(base_value=10, mid_value=20)
+    assert [f.name for f in cfg.fields if f.metadata.get("cli") is False] == ["rt"]

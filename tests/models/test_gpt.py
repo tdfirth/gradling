@@ -29,7 +29,7 @@ def setup():
             momentum=0.9,
             train_steps=1,
         )
-        cfg = cfg.model_copy(update=kwargs)
+        cfg = cfg.replace(**kwargs)
         return GPT(cfg, len(tok.vocab))
 
     yield model, loader

@@ -24,10 +24,9 @@ class Run:
         self.checkpointer = ocp.StandardCheckpointer()
 
     @classmethod
-    def from_config(cls, cfg: dict, family: str) -> Self:
+    def from_config(cls, model: str, cfg: dict) -> Self:
         metrics = Metrics(cfg)
-        safe_family = family.strip().replace("/", "_") or "default"
-        path = EXPERIMENTS / safe_family / metrics.name
+        path = EXPERIMENTS / model / metrics.name
         path.mkdir(parents=True, exist_ok=True)
         _cfg_json(path).write_text(json.dumps(cfg, indent=2))
         return cls(path, cfg, metrics)

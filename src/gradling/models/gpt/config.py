@@ -1,6 +1,9 @@
+from dataclasses import dataclass
+
 from gradling.config import Config
 
 
+@dataclass
 class GPTConfig(Config):
     seed: int = 42
     batch_size: int = 32
