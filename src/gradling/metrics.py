@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import os
-from typing import Any, Protocol
+from datetime import datetime
+from typing import Any, Protocol, cast
 
 from gradling import logger
 from gradling.dir import ROOT
@@ -51,12 +52,21 @@ def _load_dotenv() -> None:
 class Metrics:
     def __init__(self, config: dict[str, Any]) -> None:
         self.sinks: list[MetricSink] = [LogSink()]
+        self._wandb_sink: WandbSink | None = None
         _load_dotenv()
         if os.environ.get("WANDB_API_KEY"):
             try:
-                self.sinks.append(WandbSink(config))
+                self._wandb_sink = WandbSink(config)
+                self.sinks.append(self._wandb_sink)
             except Exception:
                 log.warning("Failed to initialize wandb sink", exc_info=True)
+
+    @property
+    def name(self) -> str:
+        if self._wandb_sink is not None:
+            return cast(str, self._wandb_sink.run.name)
+        fallback_name = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
+        return fallback_name
 
     def track(self, metrics: dict[str, Any], step: int) -> None:
         for sink in self.sinks:

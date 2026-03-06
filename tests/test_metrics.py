@@ -54,17 +54,13 @@ class TestMetrics:
 
 class TestRunTrack:
     def _make_run(self, tmp_path):
-
         path = tmp_path / "run"
         path.mkdir()
-        with (
-            patch("gradling.metrics._load_dotenv"),
-            patch.dict(os.environ, {}, clear=True),
-        ):
-            run = Run(path, {})
-        fake = FakeSink()
-        run.metrics.sinks = [fake]
-        return run, fake
+        m = Metrics.__new__(Metrics)
+        m.sinks = [FakeSink()]
+        m._wandb_sink = None
+        run = Run(path, {}, m)
+        return run, m.sinks[0]
 
     def test_track_delegates_to_metrics(self, tmp_path):
         run, fake = self._make_run(tmp_path)
@@ -79,6 +75,20 @@ class TestRunTrack:
         run.finalize()
 
         assert fake.closed
+
+
+class TestMetricsName:
+    def test_fallback_name_is_timestamp(self):
+        m = Metrics.__new__(Metrics)
+        m._wandb_sink = None
+        name = m.name
+        parts = name.split("-")
+        assert len(parts) == 6
+
+    def test_fallback_name_is_stable(self):
+        m = Metrics.__new__(Metrics)
+        m._wandb_sink = None
+        assert m.name == m.name
 
 
 class TestMetricsInit:

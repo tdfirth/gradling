@@ -1,5 +1,4 @@
 import json
-from datetime import datetime
 from pathlib import Path
 from typing import Any, Self
 
@@ -17,26 +16,26 @@ def _cfg_json(path: Path) -> Path:
 
 
 class Run:
-    def __init__(self, path: Path, cfg: dict):
+    def __init__(self, path: Path, cfg: dict, metrics: Metrics):
         self.cfg = cfg
-        self.metrics = Metrics(cfg)
+        self.metrics = metrics
         self.checkpoints = path / "checkpoints"
         self.checkpoints.mkdir(parents=True, exist_ok=True)
         self.checkpointer = ocp.StandardCheckpointer()
 
     @classmethod
     def from_config(cls, cfg: dict, family: str) -> Self:
-        now = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
+        metrics = Metrics(cfg)
         safe_family = family.strip().replace("/", "_") or "default"
-        path = EXPERIMENTS / safe_family / now
+        path = EXPERIMENTS / safe_family / metrics.name
         path.mkdir(parents=True, exist_ok=True)
         _cfg_json(path).write_text(json.dumps(cfg, indent=2))
-        return cls(path, cfg)
+        return cls(path, cfg, metrics)
 
     @classmethod
     def from_path(cls, path: Path) -> Self:
         cfg = json.loads(_cfg_json(path).read_text())
-        return cls(path, cfg)
+        return cls(path, cfg, Metrics(cfg))
 
     # TODO handle optimizer state as well as weights.
     def checkpoint(self, label: str, model: nnx.Module):
