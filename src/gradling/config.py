@@ -25,6 +25,14 @@ class Config(BaseModel):
     def config_name(cls) -> str:
         return cls.__config_name__
 
+    def __hash__(self) -> int:
+        return hash(tuple(self.model_dump().items()))
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, type(self)):
+            return NotImplemented
+        return self.model_dump() == other.model_dump()
+
     def tree_flatten(self):
         names = tuple(type(self).model_fields.keys())
         values = tuple(getattr(self, name) for name in names)
