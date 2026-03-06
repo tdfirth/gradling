@@ -35,7 +35,7 @@ class Run:
     @classmethod
     def from_path(cls, path: Path) -> Self:
         cfg = json.loads(_cfg_json(path).read_text())
-        return cls(path, cfg, Metrics(cfg))
+        return cls(path, cfg, Metrics(cfg, enable_wandb=False))
 
     # TODO handle optimizer state as well as weights.
     def checkpoint(self, label: str, model: nnx.Module):

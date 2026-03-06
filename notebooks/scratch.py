@@ -6,16 +6,15 @@ app = marimo.App(width="medium")
 
 @app.cell
 def _():
-    from gradling.train import train_step, eval_step, train
-    from flax import nnx
     import jax.numpy as jnp
-    import jax
-    import optax
     import marimo as mo
     import matplotlib.pyplot as plt
+    import optax
+    from flax import nnx
 
-    from gradling.data import make_loader, prepare_training_data, SHAKESPEARE
+    from gradling.data import SHAKESPEARE, make_loader, prepare_training_data
     from gradling.tokenizers import CharacterTokenizer
+    from gradling.train import train
 
     jnp.set_printoptions(precision=4, linewidth=200)
     return (
@@ -33,7 +32,7 @@ def _():
 
 @app.cell
 def _(CharacterTokenizer, SHAKESPEARE, prepare_training_data):
-    with open(SHAKESPEARE, "r") as f:
+    with open(SHAKESPEARE) as f:
         CORPUS = f.read()
 
     TOK = CharacterTokenizer.train(CORPUS)
@@ -191,9 +190,10 @@ def _(TOK, dev_loader, model):
 
 @app.cell
 def _(mo, model, nnx):
-    from pathlib import Path
-    import treescope
     import tempfile
+    from pathlib import Path
+
+    import treescope
     # jax.tree_util.
 
     with treescope.active_autovisualizer.set_scoped(treescope.ArrayAutovisualizer()):

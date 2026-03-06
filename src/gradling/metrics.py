@@ -50,16 +50,17 @@ def _load_dotenv() -> None:
 
 
 class Metrics:
-    def __init__(self, config: dict[str, Any]) -> None:
+    def __init__(self, config: dict[str, Any], *, enable_wandb: bool = True) -> None:
         self.sinks: list[MetricSink] = [LogSink()]
         self._wandb_sink: WandbSink | None = None
-        _load_dotenv()
-        if os.environ.get("WANDB_API_KEY"):
-            try:
-                self._wandb_sink = WandbSink(config)
-                self.sinks.append(self._wandb_sink)
-            except Exception:
-                log.warning("Failed to initialize wandb sink", exc_info=True)
+        if enable_wandb:
+            _load_dotenv()
+            if os.environ.get("WANDB_API_KEY"):
+                try:
+                    self._wandb_sink = WandbSink(config)
+                    self.sinks.append(self._wandb_sink)
+                except Exception:
+                    log.warning("Failed to initialize wandb sink", exc_info=True)
 
     @property
     def name(self) -> str:
