@@ -18,35 +18,6 @@ def _loss_fn(model: GPT, xs: jax.Array, ys: jax.Array):
     return loss, logits
 
 
-@nnx.jit(static_argnums=(0,))
-def _train_step(
-    cfg: GPTConfig,
-    model: GPT,
-    optimizer: nnx.Optimizer,
-    metrics: nnx.MultiMetric,
-    rngs: nnx.Rngs,
-    train_data: jax.Array,
-):
-    xs, ys = sample_batch(rngs, train_data, cfg.batch_size, cfg.n_ctx)
-    grad_fn = nnx.value_and_grad(_loss_fn, has_aux=True)
-    (loss, logits), grads = grad_fn(model, xs, nnx.one_hot(ys, model.n_vocab))
-    metrics.update(loss=loss, logits=logits, labels=ys)
-    optimizer.update(model, grads)
-
-
-@nnx.jit(static_argnums=(0,))
-def _eval_step(
-    cfg: GPTConfig,
-    model: GPT,
-    metrics: nnx.MultiMetric,
-    rngs: nnx.Rngs,
-    dev_data: jax.Array,
-):
-    xs, ys = sample_batch(rngs, dev_data, cfg.batch_size, cfg.n_ctx)
-    loss, logits = _loss_fn(model, xs, nnx.one_hot(ys, model.n_vocab))
-    metrics.update(loss=loss, logits=logits, labels=ys)
-
-
 def _run_training_loop(
     run: Run,
     cfg: GPTConfig,
@@ -57,13 +28,38 @@ def _run_training_loop(
     train_data: jax.Array,
     dev_data: jax.Array,
 ) -> None:
-    eval_cfg = cfg.replace(batch_size=512)
+
+    @nnx.jit
+    def _train_step(
+        model: GPT,
+        optimizer: nnx.Optimizer,
+        metrics: nnx.MultiMetric,
+        rngs: nnx.Rngs,
+        train_data: jax.Array,
+    ):
+        xs, ys = sample_batch(rngs, train_data, cfg.batch_size, cfg.n_ctx)
+        grad_fn = nnx.value_and_grad(_loss_fn, has_aux=True)
+        (loss, logits), grads = grad_fn(model, xs, nnx.one_hot(ys, model.n_vocab))
+        metrics.update(loss=loss, logits=logits, labels=ys)
+        optimizer.update(model, grads)
+
+    @nnx.jit
+    def _eval_step(
+        model: GPT,
+        metrics: nnx.MultiMetric,
+        rngs: nnx.Rngs,
+        dev_data: jax.Array,
+    ):
+        xs, ys = sample_batch(rngs, dev_data, cfg.batch_size * 4, cfg.n_ctx)
+        loss, logits = _loss_fn(model, xs, nnx.one_hot(ys, model.n_vocab))
+        metrics.update(loss=loss, logits=logits, labels=ys)
+
     for step in range(cfg.train_steps):
         if step % 100 == 0:
             log.info(f"Training for step {step}/{cfg.train_steps}")
 
         model.train()
-        _train_step(cfg, model, optimizer, metrics, rngs, train_data)
+        _train_step(model, optimizer, metrics, rngs, train_data)
 
         if step % 100 == 0:
             run.track(
@@ -73,7 +69,7 @@ def _run_training_loop(
             metrics.reset()
 
             model.eval()
-            _eval_step(eval_cfg, model, metrics, rngs, dev_data)
+            _eval_step(model, metrics, rngs, dev_data)
             run.track(
                 {f"dev_{k}": v for k, v in metrics.compute().items()},
                 step=step,
