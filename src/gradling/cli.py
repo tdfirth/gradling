@@ -3,24 +3,19 @@ from __future__ import annotations
 import argparse
 import sys
 from dataclasses import fields
+from functools import partial
 from types import UnionType
 from typing import Any, Union, get_args, get_origin
 
 from rich.console import Console
-from rich.panel import Panel
 from rich.table import Table
+from rich_argparse import RichHelpFormatter
 
 from gradling.config import Config
-from gradling.models import MODELS, Model
+from gradling.models import MODELS, Command, Model
 
 console = Console()
-
-
-def _fail(message: str, *, hint: str | None = None) -> int:
-    console.print(f"[bold red]Error:[/bold red] {message}")
-    if hint:
-        console.print(f"[dim]{hint}[/dim]")
-    return 2
+Formatter = partial(RichHelpFormatter, max_help_position=120)
 
 
 def _normalize_scalar_type(type_hint: Any) -> type | None:
@@ -45,162 +40,120 @@ def _normalize_scalar_type(type_hint: Any) -> type | None:
     return None
 
 
-def _render_models_table() -> None:
-    table = Table(title="Registered Models")
-    table.add_column("Model", style="cyan")
+def _models_table(registry: dict[str, Model]) -> Table:
+    table = Table(title="Registered Models", highlight=True)
+    table.add_column("Model", style="bold cyan")
     table.add_column("Config")
-    table.add_column("Description")
-    for name, model in sorted(MODELS.items()):
+    table.add_column("Description", style="dim")
+    for name, model in sorted(registry.items()):
         table.add_row(name, model.cfg.__name__, model.description or "-")
-    console.print(table)
+    return table
 
 
-def _render_commands_table(model_name: str, spec: Model) -> None:
-    table = Table(title=f"Commands for {model_name}")
-    table.add_column("Command", style="cyan")
-    table.add_column("Description")
-    for name, cmd in sorted(spec.commands.items()):
-        doc = (cmd.fn.__doc__ or "").strip().splitlines()
-        summary = doc[0] if doc else "-"
-        table.add_row(name, summary)
-    console.print(table)
-
-
-def _render_config_fields_table(cfg_cls: type[Config]) -> None:
-    table = Table(title="Config Fields")
-    table.add_column("Flag", style="cyan")
-    table.add_column("Type")
-    table.add_column("Default")
-
-    for field in fields(cfg_cls):
-        if field.metadata.get("cli") is False:
-            continue
-        scalar = _normalize_scalar_type(field.type)
+def _add_config_flags(parser: argparse.ArgumentParser, cfg_cls: type[Config]) -> None:
+    for f in cfg_cls.cli_fields():
+        scalar = _normalize_scalar_type(f.type)
         if scalar is None:
             continue
-        table.add_row(
-            f"--{field.name.replace('_', '-')}",
-            scalar.__name__,
-            str(field.default),
-        )
-
-    console.print(table)
-
-
-def _render_root_help() -> None:
-    text = (
-        "Usage:\n"
-        "  gradling models list\n"
-        "  gradling run <model> list\n"
-        "  gradling run <model> <command> [--field value ...]\n"
-        "  gradling run <model> <command> --help"
-    )
-    console.print(Panel(text, title="Gradling CLI"))
-
-
-def _build_command_parser(model_name: str, command: str, cfg_cls: type[Config]):
-    parser = argparse.ArgumentParser(
-        prog=f"gradling run {model_name} {command}",
-        add_help=True,
-    )
-    for field in fields(cfg_cls):
-        if field.metadata.get("cli") is False:
-            continue
-
-        scalar = _normalize_scalar_type(field.type)
-        if scalar is None:
-            continue
-
         kwargs: dict[str, Any] = {
-            "dest": field.name,
+            "dest": f.name,
             "default": argparse.SUPPRESS,
+            "help": f"(default: {f.default})",
         }
         if scalar is bool:
             kwargs["action"] = argparse.BooleanOptionalAction
         else:
             kwargs["type"] = scalar
-
-        parser.add_argument(f"--{field.name.replace('_', '-')}", **kwargs)
-    return parser
+        parser.add_argument(f"--{f.name.replace('_', '-')}", **kwargs)
 
 
-def _handle_models(args: list[str]) -> int:
-    if not args or args[0] in {"-h", "--help", "help"}:
-        console.print("Usage: gradling models list")
+def _make_models_list_handler(
+    registry: dict[str, Model],
+):
+    def handler(_ns: argparse.Namespace) -> int:
+        console.print(_models_table(registry))
         return 0
 
-    if args[0] != "list":
-        return _fail(
-            f"Unknown models command `{args[0]}`.",
-            hint="Supported command: list",
+    return handler
+
+
+def _make_run_handler(cmd: Command, cfg_cls: type[Config]):
+    config_keys = {f.name for f in fields(cfg_cls)}
+
+    def handler(ns: argparse.Namespace) -> int:
+        overrides = {k: v for k, v in vars(ns).items() if k in config_keys}
+        cfg = cfg_cls(**overrides)
+        try:
+            cmd.fn(cfg)
+        except ValueError as exc:
+            console.print(f"[bold red]Error:[/bold red] {exc}")
+            return 2
+        return 0
+
+    return handler
+
+
+def _add_models_subcommand(
+    sub: argparse._SubParsersAction, registry: dict[str, Model]
+) -> None:
+    models_parser = sub.add_parser(
+        "models", help="List and inspect models", formatter_class=Formatter
+    )
+    models_sub = models_parser.add_subparsers(dest="models_command", required=True)
+    list_parser = models_sub.add_parser(
+        "list", help="List all registered models", formatter_class=Formatter
+    )
+    list_parser.set_defaults(func=_make_models_list_handler(registry))
+
+
+def _add_run_subcommand(
+    sub: argparse._SubParsersAction, registry: dict[str, Model]
+) -> None:
+    run_parser = sub.add_parser(
+        "run", help="Run a model command", formatter_class=Formatter
+    )
+    run_sub = run_parser.add_subparsers(dest="model_name", required=True)
+
+    for model_name, spec in registry.items():
+        model_parser = run_sub.add_parser(
+            model_name,
+            help=spec.description,
+            formatter_class=Formatter,
         )
+        cmd_sub = model_parser.add_subparsers(dest="model_command", required=True)
 
-    _render_models_table()
-    return 0
+        for cmd_name, cmd in spec.commands.items():
+            doc = (cmd.fn.__doc__ or "").strip().splitlines()
+            summary = doc[0] if doc else None
+            cmd_parser = cmd_sub.add_parser(
+                cmd_name,
+                help=summary,
+                formatter_class=Formatter,
+            )
+            _add_config_flags(cmd_parser, cmd.cfg)
+            cmd_parser.set_defaults(func=_make_run_handler(cmd, cmd.cfg))
 
 
-def _handle_run(args: list[str]) -> int:
-    if not args or args[0] in {"-h", "--help", "help"}:
-        _render_root_help()
-        return 0
+def parse_args(
+    registry: dict[str, Model], argv: list[str] | None = None
+) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        prog="gradling",
+        description="Gradling CLI",
+        formatter_class=Formatter,
+    )
+    sub = parser.add_subparsers(dest="command", required=True)
 
-    model_name = args[0]
-    spec = MODELS.get(model_name)
-    if spec is None:
-        known = ", ".join(sorted(MODELS))
-        return _fail(
-            f"Unknown model `{model_name}`.",
-            hint=f"Available models: {known}",
-        )
+    _add_models_subcommand(sub, registry)
+    _add_run_subcommand(sub, registry)
 
-    if len(args) == 1 or args[1] in {"-h", "--help", "help"}:
-        _render_commands_table(model_name, spec)
-        _render_config_fields_table(spec.cfg)
-        return 0
-
-    command = args[1]
-    if command == "list":
-        _render_commands_table(model_name, spec)
-        return 0
-
-    runner = spec.commands.get(command)
-    if runner is None:
-        known = ", ".join(sorted(spec.commands))
-        return _fail(
-            f"Unknown command `{command}` for model `{model_name}`.",
-            hint=f"Known commands: {known}",
-        )
-
-    parser = _build_command_parser(model_name, command, spec.cfg)
-    try:
-        parsed = parser.parse_args(args[2:])
-    except SystemExit as exc:
-        return exc.code if isinstance(exc.code, int) else 1
-
-    cfg = spec.cfg(vars(parsed))
-
-    try:
-        runner.fn(cfg)
-    except ValueError as exc:
-        return _fail(str(exc))
-    return 0
+    return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
     args = argv if argv is not None else sys.argv[1:]
-    if not args:
-        _render_root_help()
-        return 0
-
-    command = args[0]
-    if command in {"-h", "--help", "help"}:
-        _render_root_help()
-        return 0
-    if command == "models":
-        return _handle_models(args[1:])
-    if command == "run":
-        return _handle_run(args[1:])
-    return _fail(
-        f"Unknown command `{command}`.",
-        hint="Supported commands: models, run",
-    )
+    try:
+        app = parse_args(MODELS, args)
+    except SystemExit as exc:
+        return exc.code if isinstance(exc.code, int) else (1 if exc.code else 0)
+    return app.func(app)

@@ -1,4 +1,4 @@
-from dataclasses import asdict, dataclass, field, fields, replace
+from dataclasses import Field, asdict, dataclass, field, fields, replace
 from typing import cast
 
 
@@ -21,3 +21,7 @@ class Config:
     @property
     def fields(self):
         return fields(self)
+
+    @classmethod
+    def cli_fields(cls) -> tuple[Field, ...]:
+        return tuple(f for f in fields(cls) if f.metadata.get("cli") is not False)

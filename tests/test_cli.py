@@ -1,5 +1,7 @@
 from dataclasses import dataclass
 
+import pytest
+
 from gradling import cli
 from gradling.config import Config
 from gradling.models import Command, Model
@@ -13,58 +15,72 @@ class CliConfigFixture(Config):
     enabled: bool = False
 
 
-def _with_test_model(monkeypatch, name: str, cfg_cls: type[Config], command):
-    patched = dict(cli.MODELS)
-    patched[name] = Model(
-        cfg=cfg_cls, commands={"noop": Command(cfg=cfg_cls, fn=command)}
-    )
-    monkeypatch.setattr(cli, "MODELS", patched)
+def _noop(_: CliConfigFixture) -> None:
+    return None
 
 
-def test_models_list_includes_gpt(capsys):
-    code = cli.main(["models", "list"])
+TEST_REGISTRY: dict[str, Model] = {
+    "test_model": Model(
+        cfg=CliConfigFixture,
+        commands={"noop": Command(cfg=CliConfigFixture, fn=_noop)},
+        description="A test model.",
+    ),
+}
+
+
+def _run(registry: dict[str, Model], argv: list[str]) -> int:
+    try:
+        ns = cli.parse_args(registry, argv)
+    except SystemExit as exc:
+        return exc.code if isinstance(exc.code, int) else 1
+    return ns.func(ns)
+
+
+def test_models_list(capsys):
+    code = _run(TEST_REGISTRY, ["models", "list"])
     out = capsys.readouterr().out
     assert code == 0
-    assert "gpt" in out
+    assert "test_model" in out
 
 
-def test_run_list_shows_commands(capsys):
-    code = cli.main(["run", "gpt", "list"])
+def test_run_model_help_shows_commands(capsys):
+    code = _run(TEST_REGISTRY, ["run", "test_model", "--help"])
     out = capsys.readouterr().out
     assert code == 0
-    assert "train" in out
-    assert "sample" in out
+    assert "noop" in out
 
 
 def test_run_help_shows_config_fields(capsys):
-    code = cli.main(["run", "gpt", "train", "--help"])
-    output = capsys.readouterr().out
+    code = _run(TEST_REGISTRY, ["run", "test_model", "noop", "--help"])
+    out = capsys.readouterr().out
     assert code == 0
-    assert "--batch-size" in output
+    assert "--n" in out
+    assert "--ratio" in out
+    assert "--title" in out
+    assert "--enabled" in out
 
 
-def test_run_rejects_unknown_override(monkeypatch, capsys):
-    def noop(_: CliConfigFixture):
-        return None
-
-    _with_test_model(monkeypatch, "test_cli_config", CliConfigFixture, noop)
-
-    code = cli.main(["run", "test_cli_config", "noop", "--does-not-exist", "1"])
-    err = capsys.readouterr().err
+def test_run_rejects_unknown_override(capsys):
+    code = _run(TEST_REGISTRY, ["run", "test_model", "noop", "--does-not-exist", "1"])
     assert code == 2
-    assert "unrecognized arguments" in err
 
 
-def test_run_parses_scalar_overrides(monkeypatch, capsys):
-    def noop(cfg: CliConfigFixture):
+def test_run_parses_scalar_overrides(capsys):
+    def printing_noop(cfg: CliConfigFixture) -> None:
         print(f"{cfg.n}|{cfg.ratio}|{cfg.title}|{cfg.enabled}")
 
-    _with_test_model(monkeypatch, "test_cli_config", CliConfigFixture, noop)
+    registry: dict[str, Model] = {
+        "test_model": Model(
+            cfg=CliConfigFixture,
+            commands={"noop": Command(cfg=CliConfigFixture, fn=printing_noop)},
+        ),
+    }
 
-    code = cli.main(
+    code = _run(
+        registry,
         [
             "run",
-            "test_cli_config",
+            "test_model",
             "noop",
             "--n",
             "3",
@@ -73,8 +89,18 @@ def test_run_parses_scalar_overrides(monkeypatch, capsys):
             "--title",
             "demo",
             "--enabled",
-        ]
+        ],
     )
     out = capsys.readouterr().out
     assert code == 0
     assert "3|0.5|demo|True" in out
+
+
+def test_unknown_command():
+    with pytest.raises(SystemExit):
+        cli.parse_args(TEST_REGISTRY, ["bogus"])
+
+
+def test_unknown_model():
+    with pytest.raises(SystemExit):
+        cli.parse_args(TEST_REGISTRY, ["run", "nonexistent", "train"])

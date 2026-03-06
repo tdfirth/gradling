@@ -53,5 +53,6 @@ class RuntimeLeaf(MultiLevelMid):
 
 
 def test_runtime_fields():
-    cfg = RuntimeLeaf(base_value=10, mid_value=20)
-    assert [f.name for f in cfg.fields if f.metadata.get("cli") is False] == ["rt"]
+    cli_names = [f.name for f in RuntimeLeaf.cli_fields()]
+    assert "rt" not in cli_names
+    assert "base_value" in cli_names
