@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from time import perf_counter
+
 import jax
 import optax
 from flax import nnx
@@ -16,6 +18,15 @@ def _loss_fn(model: GPT, xs: jax.Array, ys: jax.Array):
     logits = model(xs)
     loss = optax.softmax_cross_entropy(logits, ys).mean()
     return loss, logits
+
+
+def duration_in_ms(start: int | float, stop: int | float) -> int | float:
+    start_ms = start * 1000
+    stop_ms = stop * 1000
+    return stop_ms - start_ms
+
+
+EVALUATE_ON_STEP = 200
 
 
 def _run_training_loop(
@@ -54,27 +65,54 @@ def _run_training_loop(
         loss, logits = _loss_fn(model, xs, nnx.one_hot(ys, model.n_vocab))
         metrics.update(loss=loss, logits=logits, labels=ys)
 
+    model.train()
+    window_start = perf_counter()
     for step in range(cfg.train_steps):
-        if step % 100 == 0:
-            log.info(f"Training for step {step}/{cfg.train_steps}")
+        should_evaluate = step % EVALUATE_ON_STEP == 0
+        if not should_evaluate:
+            _train_step(model, optimizer, metrics, rngs, train_data)
+        else:
+            log.info(f"Step {step}/{cfg.train_steps}")
 
-        model.train()
-        _train_step(model, optimizer, metrics, rngs, train_data)
+            # Measure any time taken waiting for data to be ready.
+            data_start = perf_counter()
+            jax.effects_barrier()
+            data_end = perf_counter()
 
-        if step % 100 == 0:
-            run.track(
-                {f"train_{k}": v for k, v in metrics.compute().items()},
-                step=step,
-            )
+            train_start = perf_counter()
+            _train_step(model, optimizer, metrics, rngs, train_data)
+            jax.effects_barrier()
+            train_end = perf_counter()
+
+            train_metrics = {f"train_{k}": v for k, v in metrics.compute().items()}
             metrics.reset()
 
             model.eval()
             _eval_step(model, metrics, rngs, dev_data)
+            dev_metrics = {f"dev_{k}": v for k, v in metrics.compute().items()}
+            metrics.reset()
+
+            window_end = perf_counter()
+            window_duration_ms = duration_in_ms(window_start, window_end)
+            window_duration_sec = window_duration_ms / 1000
+            samples_processed = cfg.batch_size * EVALUATE_ON_STEP
+
             run.track(
-                {f"dev_{k}": v for k, v in metrics.compute().items()},
+                {
+                    **train_metrics,
+                    **dev_metrics,
+                    "timing/ms_per_step": window_duration_ms / EVALUATE_ON_STEP,
+                    "timing/samples_per_second": samples_processed
+                    / window_duration_sec,
+                    "timing/step_wait_ms": duration_in_ms(data_start, data_end),
+                    "timing/train_exec_ms": duration_in_ms(train_start, train_end),
+                },
                 step=step,
             )
-            metrics.reset()
+
+            # Get ready for the next round
+            model.train()
+            window_start = perf_counter()
 
     log.info("Done training, saving weights")
     run.checkpoint("final", model)

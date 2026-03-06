@@ -17,8 +17,7 @@ class MetricSink(Protocol):
 
 class LogSink:
     def track(self, metrics: dict[str, Any], step: int) -> None:
-        for k, v in metrics.items():
-            log.info(f"[step {step}] {k}: {v:.4f}")
+        log.info(" ".join([f"{k}={v:.2f}" for k, v in metrics.items()]))
 
     def close(self) -> None:
         pass
