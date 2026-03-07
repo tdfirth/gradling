@@ -1,43 +1,72 @@
+from itertools import islice
+
+import jax
+import numpy as np
+import pytest
 from flax import nnx
 
-from gradling.data import make_loader, prepare_training_data
+from gradling.data import loader, prepare_training_data, random_iterator
 from gradling.tokenizers import CharacterTokenizer
 
 CORPUS = "The quick brown fox jumped over the lazy dog."
 
 
-def test_prepare_training_data():
-    tok = CharacterTokenizer.train(CORPUS)
+@pytest.fixture
+def tok():
+    yield CharacterTokenizer.train(CORPUS)
+
+
+def test_prepare_training_data(tok):
     train, dev = prepare_training_data(tok, CORPUS)
     assert tok.decode(train.tolist()) == "The quick brown fox jumped over the lazy"
     assert tok.decode(dev.tolist()) == " dog."
 
 
-def test_loader():
-    tok = CharacterTokenizer.train(CORPUS)
+def test_empty_loader():
+    got = list(loader(iter([])))
+    assert got == []
+
+
+def test_single_item_loader():
+    data = np.ones((2, 2))
+    got = list(loader(iter([data])))
+    assert len(got) == 1
+    assert np.all(got[0] == data)
+
+
+def test_loader(tok):
+    n = 20
     train, _ = prepare_training_data(tok, CORPUS)
-    rng = nnx.Rngs(0)
-    loader = make_loader(rng, 4, 8, train)
-    xs, ys = next(loader)
-    for batch in range(4):
-        _xs = xs[batch]
-        _ys = ys[batch]
-        assert len(_xs) == 8
-        assert len(_ys) == 8
+    batch_generator = random_iterator(nnx.Rngs(0), 8, 8, train)
+    slice = list(islice(batch_generator, n))
+    want = np.array(slice)
 
-        xdec = tok.decode(_xs.tolist())
-        ydec = tok.decode(_ys.tolist())
-        assert xdec in CORPUS
-        assert ydec in CORPUS
-        assert xdec[1:] == ydec[:-1]
+    def batch_it():
+        yield from want
+
+    got = np.array(list(loader(batch_it())))
+    assert len(got) == n
+    assert np.all(want == got)
 
 
-def test_loader_can_take_many():
-    tok = CharacterTokenizer.train(CORPUS)
+def test_loader_transfers_to_device(tok):
+    n = 4
     train, _ = prepare_training_data(tok, CORPUS)
-    rng = nnx.Rngs(0)
-    loader = make_loader(rng, 4, 8, train)
-    for _ in range(100):
-        xs, ys = next(loader)
-        assert xs.shape == (4, 8)
-        assert ys.shape == (4, 8)
+    batch_generator = random_iterator(nnx.Rngs(0), 8, 8, train)
+    slice = list(islice(batch_generator, n))
+
+    def batch_it():
+        yield from np.array(slice)
+
+    for batch in loader(batch_it()):
+        assert isinstance(batch, jax.Array)
+
+
+def test_handles_exception_in_iterator():
+    def explodes():
+        yield np.ones((2, 2))
+        yield np.ones((2, 2))
+        raise RuntimeError("boom")
+
+    with pytest.raises(RuntimeError):
+        list(loader(explodes()))

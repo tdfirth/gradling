@@ -8,7 +8,7 @@ from flax import nnx
 from jax import numpy as jnp
 from jax import random
 
-from gradling.data import make_loader, prepare_training_data
+from gradling.data import prepare_training_data, random_iterator
 from gradling.models.gpt.common import load_corpus, log
 from gradling.models.gpt.config import GPTConfig
 from gradling.models.gpt.model import GPT
@@ -73,7 +73,7 @@ def sample(cfg: GPTConfig) -> None:
     tok = CharacterTokenizer.train(corpus)
     log.info("Preparing data loader")
     _, dev_data = prepare_training_data(tok, corpus)
-    loader = make_loader(rngs, cfg.batch_size, cfg.n_ctx, dev_data)
+    it = random_iterator(rngs, cfg.batch_size, cfg.n_ctx, dev_data)
 
     log.info("Initializing model")
     model = GPT(cfg, len(tok.vocab))
@@ -82,7 +82,7 @@ def sample(cfg: GPTConfig) -> None:
     run.load_checkpoint(cfg.checkpoint_label, model)
 
     log.info("Preparing inputs")
-    xs, _ = next(loader)
+    xs, _ = next(it)
     model.eval()
     _sample_tokens(model, tok, xs)
     run.finalize()

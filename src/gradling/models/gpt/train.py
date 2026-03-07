@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+import re
 from time import perf_counter
 
 import jax
 import optax
 from flax import nnx
+from fontTools.misc.iterTools import islice
+from jax import numpy as jnp
 
-from gradling.data import prepare_training_data, sample_batch
+import wandb
+from gradling.data import loader, prepare_training_data, random_iterator
 from gradling.models.gpt.common import load_corpus, log
 from gradling.models.gpt.config import GPTConfig
 from gradling.models.gpt.model import GPT
@@ -29,6 +33,15 @@ def duration_in_ms(start: int | float, stop: int | float) -> int | float:
 EVALUATE_ON_STEP = 200
 
 
+def format_path(path):
+    return "".join(format(p) for p in path)
+
+
+def path_matches(path, regex):
+    result = re.search(regex, format_path(path))
+    return result is not None
+
+
 def _run_training_loop(
     run: Run,
     cfg: GPTConfig,
@@ -46,9 +59,9 @@ def _run_training_loop(
         optimizer: nnx.Optimizer,
         metrics: nnx.MultiMetric,
         rngs: nnx.Rngs,
-        train_data: jax.Array,
+        xs: jax.Array,
+        ys: jax.Array,
     ):
-        xs, ys = sample_batch(rngs, train_data, cfg.batch_size, cfg.n_ctx)
         grad_fn = nnx.value_and_grad(_loss_fn, has_aux=True)
         (loss, logits), grads = grad_fn(model, xs, nnx.one_hot(ys, model.n_vocab))
         metrics.update(loss=loss, logits=logits, labels=ys)
@@ -59,18 +72,33 @@ def _run_training_loop(
         model: GPT,
         metrics: nnx.MultiMetric,
         rngs: nnx.Rngs,
-        dev_data: jax.Array,
+        xs: jax.Array,
+        ys: jax.Array,
     ):
-        xs, ys = sample_batch(rngs, dev_data, cfg.batch_size * 4, cfg.n_ctx)
+        # xs, ys = sample_batch(rngs, dev_data, cfg.batch_size * 4, cfg.n_ctx)
         loss, logits = _loss_fn(model, xs, nnx.one_hot(ys, model.n_vocab))
         metrics.update(loss=loss, logits=logits, labels=ys)
 
+    # Set up the data iterators
+    train_iterator = islice(
+        random_iterator(rngs, cfg.batch_size, cfg.n_ctx, train_data), cfg.train_steps
+    )
+    dev_iterator = loader(
+        islice(
+            random_iterator(rngs, cfg.batch_size * 4, cfg.n_ctx, dev_data),
+            # Plus one because we eval once on step 0 too!
+            (cfg.train_steps // EVALUATE_ON_STEP) + 1,
+        )
+    )
+
     model.train()
     window_start = perf_counter()
-    for step in range(cfg.train_steps):
+
+    for step, batch in enumerate(loader(train_iterator)):
+        xs, ys = batch
         should_evaluate = step % EVALUATE_ON_STEP == 0
         if not should_evaluate:
-            _train_step(model, optimizer, metrics, rngs, train_data)
+            _train_step(model, optimizer, metrics, rngs, xs, ys)
         else:
             log.info(f"Step {step}/{cfg.train_steps}")
 
@@ -80,7 +108,7 @@ def _run_training_loop(
             data_end = perf_counter()
 
             train_start = perf_counter()
-            _train_step(model, optimizer, metrics, rngs, train_data)
+            _train_step(model, optimizer, metrics, rngs, xs, ys)
             jax.effects_barrier()
             train_end = perf_counter()
 
@@ -88,7 +116,8 @@ def _run_training_loop(
             metrics.reset()
 
             model.eval()
-            _eval_step(model, metrics, rngs, dev_data)
+            dev_xs, dev_ys = next(dev_iterator)
+            _eval_step(model, metrics, rngs, dev_xs, dev_ys)
             dev_metrics = {f"dev_{k}": v for k, v in metrics.compute().items()}
             metrics.reset()
 
@@ -97,10 +126,28 @@ def _run_training_loop(
             window_duration_sec = window_duration_ms / 1000
             samples_processed = cfg.batch_size * EVALUATE_ON_STEP
 
+            # Compute frobenius norm for each attention block
+            attn_weights = [
+                [format_path(path), value]
+                for path, value in jax.tree.leaves_with_path(model)
+                if path_matches(path, "sa_heads.attn")
+            ]
+
+            attn_norms = {
+                f"gradients/fnorm/{p}": jnp.linalg.norm(v) for p, v in attn_weights
+            }
+            # TODO not actually gradients... need to figure out how to retrieve
+            # those from optimizer state.
+            attn_hists = {
+                f"gradients/hist/{p}": wandb.Histogram(v) for p, v in attn_weights
+            }
+
             run.track(
                 {
                     **train_metrics,
                     **dev_metrics,
+                    **attn_norms,
+                    **attn_hists,
                     "timing/ms_per_step": window_duration_ms / EVALUATE_ON_STEP,
                     "timing/samples_per_second": samples_processed
                     / window_duration_sec,
@@ -138,7 +185,17 @@ def train(cfg: GPTConfig) -> None:
     log.info("Initializing optimizer")
     optimizer = nnx.Optimizer(
         model,
-        optax.adamw(cfg.learning_rate, cfg.momentum),
+        # optax.adamw(cfg.learning_rate, cfg.momentum, weight_decay=0.1),
+        optax.adamw(
+            optax.warmup_cosine_decay_schedule(
+                init_value=0.01,
+                peak_value=0.01,
+                warmup_steps=100,
+                decay_steps=cfg.train_steps,
+            ),
+            cfg.momentum,
+            weight_decay=0.1,
+        ),
         wrt=nnx.Param,
     )
 

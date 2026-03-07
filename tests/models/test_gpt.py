@@ -1,7 +1,7 @@
 import pytest
 from flax import nnx
 
-from gradling.data import make_loader, prepare_training_data
+from gradling.data import prepare_training_data, random_iterator
 from gradling.models.gpt import GPT, GPTConfig
 from gradling.tokenizers import CharacterTokenizer
 
@@ -13,7 +13,7 @@ def setup():
     tok = CharacterTokenizer.train(CORPUS)
     train, _ = prepare_training_data(tok, CORPUS)
     rngs = nnx.Rngs(0)
-    loader = make_loader(rngs, 2, 4, train)
+    it = random_iterator(rngs, 2, 4, train)
 
     def model(**kwargs):
         cfg = GPTConfig(
@@ -32,7 +32,7 @@ def setup():
         cfg = cfg.replace(**kwargs)
         return GPT(cfg, len(tok.vocab))
 
-    yield model, loader
+    yield model, it
 
 
 def test_sweep_embedding_size(subtests, setup):

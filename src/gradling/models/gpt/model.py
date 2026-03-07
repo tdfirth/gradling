@@ -41,8 +41,8 @@ class AttentionBlock(nnx.Module):
         self.ln2 = LayerNorm(n_emb, rngs)
 
     def __call__(self, x: jax.Array):
-        x = self.sa_heads(self.ln1(x))
-        x = self.ln2(self.ff(x))
+        x = x + self.sa_heads(self.ln1(x))
+        x = x + self.ln2(self.ff(x))
         return x
 
 

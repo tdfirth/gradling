@@ -4,6 +4,8 @@ import os
 from datetime import datetime
 from typing import Any, Protocol, cast
 
+import jax
+
 from gradling import logger
 from gradling.dir import ROOT
 
@@ -15,9 +17,15 @@ class MetricSink(Protocol):
     def close(self) -> None: ...
 
 
+def is_loggable(x):
+    return isinstance(x, int | float | str | jax.Array)
+
+
 class LogSink:
     def track(self, metrics: dict[str, Any], step: int) -> None:
-        log.info(" ".join([f"{k}={v:.2f}" for k, v in metrics.items()]))
+        log.info(
+            " ".join([f"{k}={v:.2f}" for k, v in metrics.items() if is_loggable(v)])
+        )
 
     def close(self) -> None:
         pass

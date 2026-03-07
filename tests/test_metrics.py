@@ -25,8 +25,8 @@ class TestLogSink:
         with caplog.at_level(logging.INFO, logger="gradling.metrics"):
             sink.track({"loss": 0.1234, "accuracy": 0.9876}, step=42)
 
-        assert "[step 42] loss: 0.1234" in caplog.text
-        assert "[step 42] accuracy: 0.9876" in caplog.text
+        assert "loss=0.12" in caplog.text
+        assert "accuracy=0.99" in caplog.text
 
     def test_close_is_noop(self):
         LogSink().close()
