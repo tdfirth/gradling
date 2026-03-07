@@ -75,7 +75,6 @@ def _run_training_loop(
         xs: jax.Array,
         ys: jax.Array,
     ):
-        # xs, ys = sample_batch(rngs, dev_data, cfg.batch_size * 4, cfg.n_ctx)
         loss, logits = _loss_fn(model, xs, nnx.one_hot(ys, model.n_vocab))
         metrics.update(loss=loss, logits=logits, labels=ys)
 
@@ -85,7 +84,7 @@ def _run_training_loop(
     )
     dev_iterator = loader(
         islice(
-            random_iterator(rngs, cfg.batch_size * 4, cfg.n_ctx, dev_data),
+            random_iterator(rngs, 8000, cfg.n_ctx, dev_data),
             # Plus one because we eval once on step 0 too!
             (cfg.train_steps // EVALUATE_ON_STEP) + 1,
         )
@@ -185,12 +184,11 @@ def train(cfg: GPTConfig) -> None:
     log.info("Initializing optimizer")
     optimizer = nnx.Optimizer(
         model,
-        # optax.adamw(cfg.learning_rate, cfg.momentum, weight_decay=0.1),
         optax.adamw(
             optax.warmup_cosine_decay_schedule(
-                init_value=0.01,
-                peak_value=0.01,
-                warmup_steps=100,
+                init_value=cfg.learning_rate / 10,
+                peak_value=cfg.learning_rate,
+                warmup_steps=cfg.train_steps // 100,
                 decay_steps=cfg.train_steps,
             ),
             cfg.momentum,

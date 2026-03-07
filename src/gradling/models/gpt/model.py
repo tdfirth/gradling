@@ -42,7 +42,7 @@ class AttentionBlock(nnx.Module):
 
     def __call__(self, x: jax.Array):
         x = x + self.sa_heads(self.ln1(x))
-        x = x + self.ln2(self.ff(x))
+        x = x + self.ff(self.ln2(x))
         return x
 
 
