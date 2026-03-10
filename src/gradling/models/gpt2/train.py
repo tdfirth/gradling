@@ -1,26 +1,28 @@
 from __future__ import annotations
 
 import re
+from itertools import islice
 from time import perf_counter
 
 import jax
+import numpy as np
 import optax
 from flax import nnx
-from fontTools.misc.iterTools import islice
 from jax import numpy as jnp
 
 import wandb
-from gradling.data import jax_random_iterator, loader, prepare_training_data
-from gradling.models.gpt.common import load_corpus, log
-from gradling.models.gpt.config import GPTConfig
-from gradling.models.gpt.model import GPT
+from gradling import logger
+from gradling.data import create_dataset, loader, random_iterator
+from gradling.models.gpt2.config import GPT2Config
+from gradling.models.gpt2.model import GPT2
 from gradling.run import Run
-from gradling.tokenizers import CharacterTokenizer
+
+log = logger.get(__name__)
 
 
-def _loss_fn(model: GPT, xs: jax.Array, ys: jax.Array):
+def _loss_fn(model: GPT2, xs: jax.Array, ys: jax.Array):
     logits = model(xs)
-    loss = optax.softmax_cross_entropy(logits, ys).mean()
+    loss = optax.softmax_cross_entropy_with_integer_labels(logits, ys).mean()
     return loss, logits
 
 
@@ -44,18 +46,18 @@ def path_matches(path, regex):
 
 def _run_training_loop(
     run: Run,
-    cfg: GPTConfig,
-    model: GPT,
+    cfg: GPT2Config,
+    model: GPT2,
     optimizer: nnx.Optimizer,
     metrics: nnx.MultiMetric,
     rngs: nnx.Rngs,
-    train_data: jax.Array,
-    dev_data: jax.Array,
+    train_data: np.memmap,
+    dev_data: np.memmap,
 ) -> None:
 
     @nnx.jit
     def _train_step(
-        model: GPT,
+        model: GPT2,
         optimizer: nnx.Optimizer,
         metrics: nnx.MultiMetric,
         rngs: nnx.Rngs,
@@ -63,29 +65,30 @@ def _run_training_loop(
         ys: jax.Array,
     ):
         grad_fn = nnx.value_and_grad(_loss_fn, has_aux=True)
-        (loss, logits), grads = grad_fn(model, xs, nnx.one_hot(ys, model.n_vocab))
-        metrics.update(loss=loss, logits=logits, labels=ys)
+        (loss, logits), grads = grad_fn(model, xs, ys)
+        metrics.update(loss=loss, logits=logits, labels=ys.astype(jnp.int32))
         optimizer.update(model, grads)
 
     @nnx.jit
     def _eval_step(
-        model: GPT,
+        model: GPT2,
         metrics: nnx.MultiMetric,
         rngs: nnx.Rngs,
         xs: jax.Array,
         ys: jax.Array,
     ):
-        loss, logits = _loss_fn(model, xs, nnx.one_hot(ys, model.n_vocab))
-        metrics.update(loss=loss, logits=logits, labels=ys)
+        loss, logits = _loss_fn(model, xs, ys)
+        metrics.update(loss=loss, logits=logits, labels=ys.astype(jnp.int32))
 
     # Set up the data iterators
+    nrng = np.random.Generator(np.random.PCG64(seed=cfg.seed))
     train_iterator = islice(
-        jax_random_iterator(rngs, cfg.batch_size, cfg.n_ctx, train_data),
+        random_iterator(nrng, cfg.batch_size, cfg.n_ctx, train_data),
         cfg.train_steps,
     )
     dev_iterator = loader(
         islice(
-            jax_random_iterator(rngs, 8000, cfg.n_ctx, dev_data),
+            random_iterator(nrng, cfg.batch_size, cfg.n_ctx, dev_data),
             # Plus one because we eval once on step 0 too!
             (cfg.train_steps // EVALUATE_ON_STEP) + 1,
         )
@@ -165,22 +168,17 @@ def _run_training_loop(
     run.checkpoint("final", model)
 
 
-def train(cfg: GPTConfig) -> None:
-    """Train a GPT."""
+def train(cfg: GPT2Config) -> None:
+    """Train a GPT2."""
 
     rngs = nnx.Rngs(cfg.seed)
 
-    log.info("Loading data")
-    corpus = load_corpus()
-
-    log.info("Training tokenizer")
-    tok = CharacterTokenizer.train(corpus)
-    log.info("Creating test, dev split")
-    train_data, dev_data = prepare_training_data(tok, corpus)
+    log.info("Loading dataset")
+    tok, train_data, dev_data = create_dataset("roneneldan/TinyStories")
 
     log.info("Starting training run with config %s", cfg)
     log.info("Initializing model")
-    model = GPT(cfg, len(tok.vocab))
+    model = GPT2(cfg, len(tok.vocab))
 
     log.info("Initializing optimizer")
     optimizer = nnx.Optimizer(
@@ -216,7 +214,7 @@ def train(cfg: GPTConfig) -> None:
             "checkpoint_label": cfg.checkpoint_label,
         }
     )
-    run = Run.from_config("gpt", run_cfg)
+    run = Run.from_config("gpt2", run_cfg)
 
     _run_training_loop(
         run,

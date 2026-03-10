@@ -1,7 +1,7 @@
 import pytest
 from flax import nnx
 
-from gradling.data import prepare_training_data, random_iterator
+from gradling.data import jax_random_iterator, prepare_training_data
 from gradling.models.gpt import GPT, GPTConfig
 from gradling.tokenizers import CharacterTokenizer
 
@@ -13,7 +13,7 @@ def setup():
     tok = CharacterTokenizer.train(CORPUS)
     train, _ = prepare_training_data(tok, CORPUS)
     rngs = nnx.Rngs(0)
-    it = random_iterator(rngs, 2, 4, train)
+    it = jax_random_iterator(rngs, 2, 4, train)
 
     def model(**kwargs):
         cfg = GPTConfig(

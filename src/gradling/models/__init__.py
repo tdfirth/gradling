@@ -3,7 +3,7 @@ from collections.abc import Callable
 from pydantic import BaseModel
 
 from gradling.config import Config
-from gradling.models import gpt, mlp
+from gradling.models import gpt, gpt2, mlp
 
 
 class Command[Cfg: Config](BaseModel):
@@ -24,6 +24,16 @@ MODELS: dict[str, Model] = {
         commands={
             "train": Command(cfg=gpt.GPTConfig, fn=gpt.train),
             "sample": Command(cfg=gpt.GPTConfig, fn=gpt.sample),
+        },
+    ),
+    "gpt2": Model(
+        cfg=gpt2.GPT2Config,
+        description="Character-level GPT model and commands.",
+        commands={
+            "train": Command(cfg=gpt2.GPT2Config, fn=gpt2.train),
+            "sample": Command(cfg=gpt2.GPT2Config, fn=gpt2.sample),
+            "data": Command(cfg=gpt2.DataConfig, fn=gpt2.data),
+            "chat": Command(cfg=gpt2.ChatConfig, fn=gpt2.chat),
         },
     ),
     "mlp": Model(

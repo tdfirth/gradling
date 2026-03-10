@@ -5,7 +5,7 @@ import numpy as np
 import pytest
 from flax import nnx
 
-from gradling.data import loader, prepare_training_data, random_iterator
+from gradling.data import jax_random_iterator, loader, prepare_training_data
 from gradling.tokenizers import CharacterTokenizer
 
 CORPUS = "The quick brown fox jumped over the lazy dog."
@@ -37,7 +37,7 @@ def test_single_item_loader():
 def test_loader(tok):
     n = 20
     train, _ = prepare_training_data(tok, CORPUS)
-    batch_generator = random_iterator(nnx.Rngs(0), 8, 8, train)
+    batch_generator = jax_random_iterator(nnx.Rngs(0), 8, 8, train)
     slice = list(islice(batch_generator, n))
     want = np.array(slice)
 
@@ -52,7 +52,7 @@ def test_loader(tok):
 def test_loader_transfers_to_device(tok):
     n = 4
     train, _ = prepare_training_data(tok, CORPUS)
-    batch_generator = random_iterator(nnx.Rngs(0), 8, 8, train)
+    batch_generator = jax_random_iterator(nnx.Rngs(0), 8, 8, train)
     slice = list(islice(batch_generator, n))
 
     def batch_it():

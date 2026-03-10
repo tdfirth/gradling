@@ -4,16 +4,22 @@ from pathlib import Path
 from typing import NamedTuple
 
 import jax
+import numpy as np
 from flax import nnx
 from jax import numpy as jnp
 from jax import random
+from transformers import TokenizersBackend
 
-from gradling.data import jax_random_iterator, prepare_training_data
-from gradling.models.gpt.common import load_corpus, log
-from gradling.models.gpt.config import GPTConfig
-from gradling.models.gpt.model import GPT
+from gradling import logger
+from gradling.data import (
+    create_dataset,
+    random_iterator,
+)
+from gradling.models.gpt2.config import GPT2Config
+from gradling.models.gpt2.model import GPT2
 from gradling.run import Run
-from gradling.tokenizers import CharacterTokenizer, Tokenizer
+
+log = logger.get(__name__)
 
 
 class _SampleState(NamedTuple):
@@ -22,9 +28,9 @@ class _SampleState(NamedTuple):
     ctx_buf: jax.Array
 
 
-def _sample_tokens(
+def sample_tokens(
     model: nnx.Module,
-    tok: Tokenizer,
+    tok: TokenizersBackend,
     inputs: jax.Array,
     max_tokens: int = 1024,
 ) -> None:
@@ -32,7 +38,7 @@ def _sample_tokens(
     def _sample(ctx: jax.Array):
         key = random.key(42)
         B, T = ctx.shape
-        output = jnp.empty((B, max_tokens))
+        output = jnp.empty((B, max_tokens), dtype=jnp.uint16)
         ctx_buf = ctx.copy()
 
         def fn(i: int, state: _SampleState):
@@ -55,8 +61,8 @@ def _sample_tokens(
         print("")
 
 
-def sample(cfg: GPTConfig) -> None:
-    """Sample from a GPT."""
+def sample(cfg: GPT2Config) -> None:
+    """Sample from a GPT2."""
 
     if not cfg.run_path:
         msg = "run_path is required for sample command."
@@ -64,19 +70,16 @@ def sample(cfg: GPTConfig) -> None:
 
     log.info("Loading run")
     run = Run.from_path(Path(cfg.run_path))
-    rngs = nnx.Rngs(cfg.seed)
+    cfg = GPT2Config(**run.cfg)
 
-    log.info("Loading data")
-    corpus = load_corpus()
+    log.info("Loading dataset")
+    tok, _, dev_data = create_dataset("roneneldan/TinyStories")
 
-    log.info("Training tokenizer")
-    tok = CharacterTokenizer.train(corpus)
-    log.info("Preparing data loader")
-    _, dev_data = prepare_training_data(tok, corpus)
-    it = jax_random_iterator(rngs, cfg.batch_size, cfg.n_ctx, dev_data)
+    nrng = np.random.Generator(np.random.PCG64(seed=cfg.seed))
+    it = random_iterator(nrng, cfg.batch_size, cfg.n_ctx, dev_data)
 
     log.info("Initializing model")
-    model = GPT(cfg, len(tok.vocab))
+    model = GPT2(cfg, len(tok.vocab))
 
     log.info("Restoring weights")
     run.load_checkpoint(cfg.checkpoint_label, model)
@@ -84,5 +87,5 @@ def sample(cfg: GPTConfig) -> None:
     log.info("Preparing inputs")
     xs, _ = next(it)
     model.eval()
-    _sample_tokens(model, tok, xs)
+    sample_tokens(model, tok, jnp.array(xs[0:1]).astype(jnp.int32))
     run.finalize()
