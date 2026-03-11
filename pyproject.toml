@@ -67,5 +67,5 @@ dev = [
     "pytest-subtests>=0.15.0",
     "ruff>=0.15.1",
     "treescope>=0.1.10",
-    "ty>=0.0.17",
+    "ty>=0.0.21",
 ]
