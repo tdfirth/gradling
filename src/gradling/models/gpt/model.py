@@ -37,8 +37,8 @@ class AttentionBlock(nnx.Module):
             dropout=dropout,
         )
         self.ff = FeedForward(n_emb, dropout, rngs)
-        self.ln1 = LayerNorm(n_emb, rngs)
-        self.ln2 = LayerNorm(n_emb, rngs)
+        self.ln1 = LayerNorm(n_emb)
+        self.ln2 = LayerNorm(n_emb)
 
     def __call__(self, x: jax.Array):
         x = x + self.sa_heads(self.ln1(x))

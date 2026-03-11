@@ -4,7 +4,7 @@ from jax import numpy as jnp
 
 
 class LayerNorm(nnx.Module):
-    def __init__(self, size: int, rngs: nnx.Rngs):
+    def __init__(self, size: int):
         self.gamma = nnx.Param(jnp.ones((size,)))
         self.beta = nnx.Param(jnp.zeros((size,)))
 

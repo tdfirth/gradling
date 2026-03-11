@@ -1,4 +1,3 @@
-import pytest
 from flax import nnx
 from jax import numpy as jnp
 from jax import random
@@ -6,12 +5,7 @@ from jax import random
 from gradling.modules import LayerNorm
 
 
-@pytest.fixture()
-def rngs():
-    yield nnx.Rngs(0)
-
-
-def test_dims(subtests, rngs):
+def test_dims(subtests):
     dims = [
         (16, 32),
         (32, 64),
@@ -20,22 +14,24 @@ def test_dims(subtests, rngs):
         (32, 8, 64),
         (32, 8, 128),
     ]
+    rngs = nnx.Rngs(42)
     for dim in dims:
         with subtests.test(msg=f"{dim}"):
             C = dim[-1]
-            ln = LayerNorm(C, rngs)
+            ln = LayerNorm(C)
             xs = random.normal(rngs(), dim)
             out = ln(xs)
 
             assert out.shape == dim
 
 
-def test_unit_variance(subtests, rngs):
+def test_unit_variance(subtests):
     dim = (32, 8, 128)
+    rngs = nnx.Rngs(42)
     for i in range(6):
         with subtests.test(msg=f"example {i}"):
             C = dim[-1]
-            ln = LayerNorm(C, rngs)
+            ln = LayerNorm(C)
             xs = random.normal(rngs(), dim)
             out = ln(xs)
             var = jnp.var(out, axis=-1)
@@ -43,12 +39,13 @@ def test_unit_variance(subtests, rngs):
             assert jnp.allclose(var, 1)
 
 
-def test_zero_mean(subtests, rngs):
+def test_zero_mean(subtests):
     dim = (32, 8, 128)
+    rngs = nnx.Rngs(42)
     for i in range(6):
         with subtests.test(msg=f"example {i}"):
             C = dim[-1]
-            ln = LayerNorm(C, rngs)
+            ln = LayerNorm(C)
             xs = random.normal(rngs(), dim)
             out = ln(xs)
             mean = jnp.mean(out, axis=-1)
@@ -56,12 +53,13 @@ def test_zero_mean(subtests, rngs):
             assert jnp.allclose(mean, 0, atol=1e-7)
 
 
-def test_gamma_and_beta(subtests, rngs):
+def test_gamma_and_beta(subtests):
     dim = (32, 8, 128)
+    rngs = nnx.Rngs(42)
     for i in range(6):
         with subtests.test(msg=f"example {i}"):
             C = dim[-1]
-            ln = LayerNorm(C, rngs)
+            ln = LayerNorm(C)
             ln.gamma = jnp.ones((128,)) * i
             ln.beta = jnp.ones((128,)) * i
             xs = random.normal(rngs(), dim)
@@ -80,7 +78,7 @@ def test_gamma_and_beta(subtests, rngs):
 
 def test_handles_zero_var_and_mean(rngs):
     dim = (32, 8, C := 128)
-    ln = LayerNorm(C, rngs)
+    ln = LayerNorm(C)
     xs = jnp.zeros(dim)
     out = ln(xs)
     assert out.shape == dim
