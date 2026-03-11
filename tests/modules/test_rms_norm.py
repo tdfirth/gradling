@@ -41,12 +41,12 @@ def test_rms_eq_one_is_identity(subtests):
 def test_scale_invariance(subtests):
     rngs = nnx.Rngs(42)
     dim = (2, 4, 8)
-    xs = [random.normal(rngs(), dim)]
-    for x in xs:
+    x = random.normal(rngs(), dim)
+    for k in range(1, 6):
         _, _, C = dim
         with subtests.test(msg=""):
             rms = RMSNorm(C)
-            assert jnp.allclose(rms(x), rms(x * 4))
+            assert jnp.allclose(rms(x), rms(x * k))
 
 
 def test_handles_zero_mean():
