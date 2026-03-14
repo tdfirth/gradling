@@ -76,7 +76,7 @@ def test_gamma_and_beta(subtests):
             assert jnp.allclose(var, i**2, atol=1e-7)
 
 
-def test_handles_zero_var_and_mean(rngs):
+def test_handles_zero_var_and_mean():
     dim = (32, 8, C := 128)
     ln = LayerNorm(C)
     xs = jnp.zeros(dim)
