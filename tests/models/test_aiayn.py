@@ -3,6 +3,7 @@ from flax import nnx
 
 from gradling.data import jax_random_iterator, prepare_training_data
 from gradling.models.aiayn import AIAYN, AIAYNConfig
+from gradling.models.aiayn.chat import right_pad
 from gradling.tokenizers import CharacterTokenizer
 
 CORPUS = "The quick brown fox jumped over the lazy dog."
@@ -43,3 +44,10 @@ def test_sweep_embedding_size(subtests, setup):
         with subtests.test(msg=f"n_emb {case}"):
             xs, _ = next(loader)
             model(n_emb=case)(xs)
+
+
+def test_right_pad():
+    assert right_pad([1, 2, 3], 5, 0) == [1, 2, 3, 0, 0]
+    assert right_pad([1, 2, 3], 6, 0) == [1, 2, 3, 0, 0, 0]
+    assert right_pad([1, 2, 3], 3, 0) == [1, 2, 3]
+    assert right_pad([1, 2, 3], 2, 0) == [1, 2, 3]

@@ -2,7 +2,7 @@ import jax
 from flax import nnx
 from jax import numpy as jnp
 
-from gradling.models.aiayn import AIAYNConfig
+from gradling.models.aiayn.config import AIAYNConfig
 from gradling.modules import LayerNorm, MultiHeadAttention
 
 

@@ -3,7 +3,7 @@ from collections.abc import Callable
 from pydantic import BaseModel
 
 from gradling.config import Config
-from gradling.models import aiayn, gpt2, mlp
+from gradling.models import aiayn, mlp
 
 
 class Command[Cfg: Config](BaseModel):
@@ -28,16 +28,8 @@ MODELS: dict[str, Model] = {
         description="Decoder only transformer based on Attention is All You Need",
         commands={
             "train": Command(cfg=aiayn.AIAYNConfig, fn=aiayn.train),
-            "sample": Command(cfg=aiayn.AIAYNConfig, fn=aiayn.sample),
-        },
-    ),
-    "gpt2": Model(
-        cfg=gpt2.GPT2Config,
-        description="GPT2 architecture",
-        commands={
-            "train": Command(cfg=gpt2.GPT2Config, fn=gpt2.train),
-            "data": Command(cfg=gpt2.DataConfig, fn=gpt2.data),
-            "chat": Command(cfg=gpt2.ChatConfig, fn=gpt2.chat),
+            "data": Command(cfg=aiayn.DataConfig, fn=aiayn.data),
+            "chat": Command(cfg=aiayn.ChatConfig, fn=aiayn.chat),
         },
     ),
 }

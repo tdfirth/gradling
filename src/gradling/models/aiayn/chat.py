@@ -14,7 +14,7 @@ from transformers import AutoTokenizer, TokenizersBackend
 
 from gradling import logger
 from gradling.config import Config
-from gradling.models.gpt2.model import GPT2, GPT2Config
+from gradling.models.aiayn.model import AIAYN, AIAYNConfig
 from gradling.run import Run
 
 log = logger.get(__name__)
@@ -39,11 +39,11 @@ def chat(cfg: ChatConfig) -> None:
 
     log.info("Loading run")
     run = Run.from_path(Path(cfg.run_path))
-    model_cfg = GPT2Config(**run.cfg)
+    model_cfg = AIAYNConfig(**run.cfg)
 
     log.info("Initializing model")
     tok = cast(TokenizersBackend, AutoTokenizer.from_pretrained("gpt2"))
-    model = GPT2(model_cfg, len(tok.vocab))
+    model = AIAYN(model_cfg, len(tok.vocab))
     model.eval()
 
     log.info("Restoring weights")
