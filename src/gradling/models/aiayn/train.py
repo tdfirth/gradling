@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from itertools import islice
+from pathlib import Path
 from time import perf_counter
 
 import jax
@@ -12,6 +13,7 @@ from jax import numpy as jnp
 
 import wandb
 from gradling import logger
+from gradling.context import Context
 from gradling.data import create_dataset, loader, random_iterator
 from gradling.models.aiayn.config import AIAYNConfig
 from gradling.models.aiayn.model import AIAYN
@@ -206,15 +208,12 @@ def train(cfg: AIAYNConfig) -> None:
         log.info("Dry run, exiting before training")
         return
 
-    run_cfg = cfg.to_dict()
-    run_cfg.update(
-        {
-            "dry_run": cfg.dry_run,
-            "run_path": cfg.run_path,
-            "checkpoint_label": cfg.checkpoint_label,
-        }
-    )
-    run = Run.from_config("gpt2", run_cfg)
+    if not cfg.run_path:
+        msg = "run_path is required."
+        raise ValueError(msg)
+
+    ctx = Context()
+    run = Run.from_path(ctx, Path(cfg.run_path))
 
     _run_training_loop(
         run,

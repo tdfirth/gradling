@@ -1,40 +1,220 @@
-import json
+from __future__ import annotations
+
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Self
+from typing import Any, Protocol, Self, cast
 
 import orbax.checkpoint as ocp
+import tomlkit
 from flax import nnx
 
-from gradling.data import ROOT
+from gradling.context import Context
 from gradling.metrics import Metrics
 
-EXPERIMENTS = ROOT / "experiments"
+RUNS = Path("runs")
+CHECKPOINTS = Path("checkpoints")
+EXPERIMENT_FILE = "experiment.toml"
+RUN_FILE = "run.toml"
 
 
-def _cfg_json(path: Path) -> Path:
-    return path / "config.json"
+class MetricSink(Protocol):
+    def track(self, metrics: dict[str, Any], step: int) -> None: ...
+    def close(self) -> None: ...
+
+
+MetricsFactory = Callable[..., MetricSink]
+
+
+def _experiment_file(path: Path) -> Path:
+    return path / EXPERIMENT_FILE
+
+
+def _run_file(path: Path) -> Path:
+    return path / RUN_FILE
+
+
+def _next_run_dir(experiment_path: Path) -> Path:
+    runs_path = experiment_path / RUNS
+    runs_path.mkdir(parents=True, exist_ok=True)
+    existing = [int(path.name) for path in runs_path.iterdir() if path.name.isdigit()]
+    return runs_path / f"{max(existing, default=0) + 1:04d}"
+
+
+class Experiment:
+    def __init__(
+        self,
+        ctx: Context,
+        path: Path,
+        *,
+        model: str,
+        name: str,
+        notes: str,
+        cfg: dict[str, Any],
+    ) -> None:
+        self.ctx = ctx
+        self.path = path
+        self.model = model
+        self.name = name
+        self.notes = notes
+        self.cfg = cfg
+        self.runs = path / RUNS
+        self.runs.mkdir(parents=True, exist_ok=True)
+
+    @classmethod
+    def create(
+        cls,
+        ctx: Context,
+        model: str,
+        name: str,
+        notes: str,
+        cfg: dict[str, Any],
+    ) -> Self:
+        path = ctx.experiments / model / name
+        if path.exists():
+            raise RuntimeError(f"Experiment {ctx.display_path(path)} already exists.")
+        path.mkdir(parents=True)
+
+        experiment_cfg = dict(cfg)
+        experiment_cfg["experiment_name"] = name
+        experiment_cfg["run_path"] = ""
+        _experiment_file(path).write_text(
+            tomlkit.dumps(
+                {
+                    "experiment": {
+                        "model": model,
+                        "name": name,
+                        "notes": notes,
+                    },
+                    "config": experiment_cfg,
+                }
+            )
+        )
+        return cls(
+            ctx,
+            path,
+            model=model,
+            name=name,
+            notes=notes,
+            cfg=experiment_cfg,
+        )
+
+    @classmethod
+    def from_path(cls, ctx: Context, path: Path) -> Self:
+        path = ctx.resolve_path(path)
+        doc = tomlkit.parse(_experiment_file(path).read_text()).unwrap()
+        experiment = doc["experiment"]
+        cfg = doc["config"]
+        return cls(
+            ctx,
+            path,
+            model=cast(str, experiment["model"]),
+            name=cast(str, experiment["name"]),
+            notes=cast(str, experiment.get("notes", "")),
+            cfg=cfg,
+        )
+
+    def create_run(
+        self,
+        notes: str,
+        cfg: dict[str, Any],
+        *,
+        metrics_factory: MetricsFactory = Metrics,
+    ) -> Run:
+        path = _next_run_dir(self.path)
+        path.mkdir(parents=True, exist_ok=True)
+
+        run_cfg = dict(cfg)
+        run_cfg["experiment_name"] = self.name
+        run_cfg["run_path"] = self.ctx.display_path(path)
+        _run_file(path).write_text(
+            tomlkit.dumps(
+                {
+                    "run": {
+                        "id": path.name,
+                        "notes": notes,
+                    },
+                    "config": run_cfg,
+                }
+            )
+        )
+        return Run.from_path(self.ctx, path, metrics_factory=metrics_factory)
+
+    def list_runs(self, *, metrics_factory: MetricsFactory = Metrics) -> list[Run]:
+        if not self.runs.exists():
+            return []
+        runs = [path for path in self.runs.iterdir() if path.is_dir()]
+        return [
+            Run.from_path(self.ctx, path, metrics_factory=metrics_factory)
+            for path in sorted(runs, key=lambda path: path.name)
+        ]
 
 
 class Run:
-    def __init__(self, path: Path, cfg: dict, metrics: Metrics):
+    def __init__(
+        self,
+        ctx: Context,
+        path: Path,
+        cfg: dict[str, Any],
+        metrics: MetricSink,
+        *,
+        run_id: str = "",
+        notes: str = "",
+    ) -> None:
+        self.ctx = ctx
+        self.path = path
         self.cfg = cfg
         self.metrics = metrics
-        self.checkpoints = path / "checkpoints"
+        self.id = run_id or path.name
+        self.notes = notes
+        self.checkpoints = path / CHECKPOINTS
         self.checkpoints.mkdir(parents=True, exist_ok=True)
         self.checkpointer = ocp.StandardCheckpointer()
 
     @classmethod
-    def from_config(cls, model: str, cfg: dict) -> Self:
-        metrics = Metrics(cfg)
-        path = EXPERIMENTS / model / metrics.name
-        path.mkdir(parents=True, exist_ok=True)
-        _cfg_json(path).write_text(json.dumps(cfg, indent=2))
-        return cls(path, cfg, metrics)
+    def from_config(
+        cls,
+        ctx: Context,
+        model: str,
+        experiment: str,
+        cfg: dict[str, Any],
+        *,
+        metrics_factory: MetricsFactory = Metrics,
+    ) -> Self:
+        experiment_path = ctx.experiments / model / experiment
+        spec = (
+            Experiment.from_path(ctx, experiment_path)
+            if experiment_path.exists()
+            else Experiment.create(ctx, model, experiment, "", cfg)
+        )
+        run = spec.create_run("", cfg, metrics_factory=metrics_factory)
+        return cls.from_path(
+            ctx,
+            run.path,
+            metrics_factory=metrics_factory,
+            enable_wandb=True,
+        )
 
     @classmethod
-    def from_path(cls, path: Path) -> Self:
-        cfg = json.loads(_cfg_json(path).read_text())
-        return cls(path, cfg, Metrics(cfg, enable_wandb=False))
+    def from_path(
+        cls,
+        ctx: Context,
+        path: Path,
+        *,
+        metrics_factory: MetricsFactory = Metrics,
+        enable_wandb: bool = False,
+    ) -> Self:
+        path = ctx.resolve_path(path)
+        doc = tomlkit.parse(_run_file(path).read_text()).unwrap()
+        run = doc["run"]
+        cfg = doc["config"]
+        return cls(
+            ctx,
+            path,
+            cfg,
+            metrics_factory(cfg, enable_wandb=enable_wandb),
+            run_id=cast(str, run.get("id", path.name)),
+            notes=cast(str, run.get("notes", "")),
+        )
 
     # TODO handle optimizer state as well as weights.
     def checkpoint(self, label: str, model: nnx.Module):

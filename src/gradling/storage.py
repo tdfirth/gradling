@@ -12,8 +12,7 @@ from huggingface_hub import HfApi, snapshot_download
 from huggingface_hub.utils import get_token
 
 from gradling import logger
-from gradling.dir import ROOT
-from gradling.env import load_dotenv
+from gradling.context import Context
 
 log = logger.get(__name__)
 
@@ -31,8 +30,11 @@ class HfApiTransport:
     repo_id = "tdfirth/gradling"
     repo_type = "model"
 
+    def __init__(self, ctx: Context) -> None:
+        self.ctx = ctx
+
     def _token(self) -> str:
-        load_dotenv()
+        self.ctx.load_dotenv()
         token = get_token()
         if token is None:
             raise RuntimeError("Missing Hugging Face token. Set HF_TOKEN in .env.")
@@ -59,9 +61,9 @@ class HfApiTransport:
 
 
 class RunStorage:
-    def __init__(self, transport: Transport, *, root: Path = ROOT) -> None:
+    def __init__(self, ctx: Context, transport: Transport) -> None:
+        self.ctx = ctx
         self.transport = transport
-        self.root = root
 
     def push(self, run_path: Path) -> None:
         checkpoints_path = self._checkpoints_path(run_path)
@@ -72,11 +74,11 @@ class RunStorage:
 
         log.info(
             "Uploading %s to hf://%s/%s",
-            checkpoints_path.relative_to(self.root),
+            checkpoints_path.relative_to(self.ctx.root),
             self.transport.repo_id,
-            checkpoints_path.relative_to(self.root).as_posix(),
+            checkpoints_path.relative_to(self.ctx.root).as_posix(),
         )
-        self.transport.push(self._artifact_path(run_path), root=self.root)
+        self.transport.push(self._artifact_path(run_path), root=self.ctx.root)
 
     def pull(self, run_path: Path) -> None:
         run_dir = self._run_dir(run_path)
@@ -90,16 +92,16 @@ class RunStorage:
             "Downloading hf://%s/%s to %s",
             self.transport.repo_id,
             self._artifact_path(run_path).as_posix(),
-            checkpoints_path.relative_to(self.root),
+            checkpoints_path.relative_to(self.ctx.root),
         )
         if checkpoints_path.exists():
             shutil.rmtree(checkpoints_path)
-        self.transport.pull(self._artifact_path(run_path), root=self.root)
+        self.transport.pull(self._artifact_path(run_path), root=self.ctx.root)
 
     def _run_dir(self, run_path: Path) -> Path:
         if run_path.is_absolute():
             raise RuntimeError("Path must be relative to the project root.")
-        return self.root / run_path
+        return self.ctx.root / run_path
 
     def _artifact_path(self, run_path: Path) -> Path:
         return run_path / CHECKPOINTS

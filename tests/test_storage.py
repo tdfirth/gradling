@@ -6,6 +6,7 @@ from tempfile import TemporaryDirectory
 
 import pytest
 
+from gradling.context import Context
 from gradling.storage import CHECKPOINTS, RunStorage
 
 
@@ -41,19 +42,19 @@ def test_push_uploads_only_run_checkpoints():
         run_dir = root / run_path
         checkpoints = run_dir / CHECKPOINTS
         checkpoints.mkdir(parents=True)
-        (run_dir / "config.json").write_text('{"model":"aiayn"}')
+        (run_dir / "config.toml").write_text('model = "aiayn"\n')
         (checkpoints / "final").mkdir()
         (checkpoints / "final" / "weights.bin").write_bytes(b"123")
 
         transport = FakeTransport(Path(remote))
-        storage = RunStorage(transport, root=root)
+        storage = RunStorage(Context(root=root), transport)
 
         storage.push(run_path)
 
         assert transport.push_calls == [run_path / CHECKPOINTS]
         remote_weights = Path(remote) / run_path / CHECKPOINTS / "final" / "weights.bin"
         assert remote_weights.read_bytes() == b"123"
-        assert not (Path(remote) / run_path / "config.json").exists()
+        assert not (Path(remote) / run_path / "config.toml").exists()
 
 
 def test_pull_rehydrates_only_run_checkpoints():
@@ -64,7 +65,7 @@ def test_pull_rehydrates_only_run_checkpoints():
         checkpoints = run_dir / CHECKPOINTS
         run_dir.mkdir(parents=True)
         checkpoints.mkdir()
-        (run_dir / "config.json").write_text('{"model":"aiayn"}')
+        (run_dir / "config.toml").write_text('model = "aiayn"\n')
         (checkpoints / "stale.txt").write_text("old")
 
         remote_checkpoints = Path(remote) / run_path / CHECKPOINTS
@@ -72,19 +73,19 @@ def test_pull_rehydrates_only_run_checkpoints():
         (remote_checkpoints / "final" / "weights.bin").write_bytes(b"abc")
 
         transport = FakeTransport(Path(remote))
-        storage = RunStorage(transport, root=root)
+        storage = RunStorage(Context(root=root), transport)
 
         storage.pull(run_path)
 
         assert transport.pull_calls == [run_path / CHECKPOINTS]
-        assert (run_dir / "config.json").read_text() == '{"model":"aiayn"}'
+        assert (run_dir / "config.toml").read_text() == 'model = "aiayn"\n'
         assert (checkpoints / "final" / "weights.bin").read_bytes() == b"abc"
         assert not (checkpoints / "stale.txt").exists()
 
 
 def test_push_rejects_absolute_paths():
     with TemporaryDirectory() as local, TemporaryDirectory() as remote:
-        storage = RunStorage(FakeTransport(Path(remote)), root=Path(local))
+        storage = RunStorage(Context(root=Path(local)), FakeTransport(Path(remote)))
 
         with pytest.raises(RuntimeError, match="relative to the project root"):
             storage.push(Path(local) / "artifact")

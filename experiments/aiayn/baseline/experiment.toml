@@ -1,0 +1,21 @@
+[experiment]
+model = "aiayn"
+name = "baseline"
+notes = ""
+
+[config]
+seed = 42
+batch_size = 256
+n_ctx = 256
+n_emb = 512
+head_size = 32
+num_heads = 8
+num_blocks = 10
+dropout = 0.1
+learning_rate = 0.0001
+momentum = 0.9
+train_steps = 50000
+dry_run = false
+experiment_name = "baseline"
+run_path = ""
+checkpoint_label = "final"

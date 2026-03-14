@@ -1,4 +1,9 @@
+import os
+
 from gradling import logger
+
+os.environ.setdefault("TRANSFORMERS_VERBOSITY", "error")
+os.environ.setdefault("TRANSFORMERS_NO_ADVISORY_WARNINGS", "1")
 
 logger.setup()
 

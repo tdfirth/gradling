@@ -3,6 +3,7 @@ import os
 from typing import Any
 from unittest.mock import patch
 
+from gradling.context import Context
 from gradling.metrics import LogSink, Metrics
 from gradling.run import Run
 
@@ -59,7 +60,7 @@ class TestRunTrack:
         m = Metrics.__new__(Metrics)
         m.sinks = [FakeSink()]
         m._wandb_sink = None
-        run = Run(path, {}, m)
+        run = Run(Context(root=tmp_path), path, {}, m)
         return run, m.sinks[0]
 
     def test_track_delegates_to_metrics(self, tmp_path):

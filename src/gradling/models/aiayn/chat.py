@@ -14,6 +14,7 @@ from transformers import AutoTokenizer, TokenizersBackend
 
 from gradling import logger
 from gradling.config import Config
+from gradling.context import Context
 from gradling.models.aiayn.model import AIAYN, AIAYNConfig
 from gradling.run import Run
 
@@ -38,7 +39,8 @@ def chat(cfg: ChatConfig) -> None:
         raise ValueError(msg)
 
     log.info("Loading run")
-    run = Run.from_path(Path(cfg.run_path))
+    ctx = Context()
+    run = Run.from_path(ctx, Path(cfg.run_path))
     model_cfg = AIAYNConfig(**run.cfg)
 
     log.info("Initializing model")

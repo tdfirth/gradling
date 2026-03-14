@@ -23,5 +23,9 @@ class Config:
         return fields(self)
 
     @classmethod
+    def field_names(cls) -> set[str]:
+        return {f.name for f in fields(cls)}
+
+    @classmethod
     def cli_fields(cls) -> tuple[Field, ...]:
         return tuple(f for f in fields(cls) if f.metadata.get("cli") is not False)
