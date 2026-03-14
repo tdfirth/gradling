@@ -595,6 +595,7 @@ source = { editable = "." }
 dependencies = [
     { name = "datasets" },
     { name = "flax" },
+    { name = "huggingface-hub" },
     { name = "jax" },
     { name = "matplotlib" },
     { name = "numpy" },
@@ -628,6 +629,7 @@ dev = [
 requires-dist = [
     { name = "datasets", specifier = ">=4.6.1" },
     { name = "flax", specifier = ">=0.12.4" },
+    { name = "huggingface-hub", specifier = ">=1.6.0" },
     { name = "jax", specifier = ">=0.9.0.1" },
     { name = "jax", extras = ["cuda12"], marker = "extra == 'cuda'", specifier = ">=0.9.0.1" },
     { name = "matplotlib", specifier = ">=3.10.8" },

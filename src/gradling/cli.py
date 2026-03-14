@@ -4,6 +4,7 @@ import argparse
 import sys
 from dataclasses import fields
 from functools import partial
+from pathlib import Path
 from types import UnionType
 from typing import Any, Union, get_args, get_origin
 
@@ -11,7 +12,9 @@ from rich.console import Console
 from rich.table import Table
 from rich_argparse import RichHelpFormatter
 
+from gradling import storage
 from gradling.config import Config
+from gradling.env import load_dotenv
 from gradling.models import MODELS, Command, Model
 
 console = Console()
@@ -134,33 +137,63 @@ def _add_run_subcommand(
             cmd_parser.set_defaults(func=_make_run_handler(cmd, cmd.cfg))
 
 
-def _add_datasets_subcommand(sub: argparse._SubParsersAction) -> None:
-    datasets_parser = sub.add_parser(
-        "dataset",
-        help="Download and prepare datasets from Hugging Face",
+def _make_storage_handler(action: str, store: storage.RunStorage):
+    fn = store.push if action == "push" else store.pull
+
+    def handler(ns: argparse.Namespace) -> int:
+        try:
+            fn(Path(ns.path))
+        except (RuntimeError, ValueError) as exc:
+            console.print(f"[bold red]Error:[/bold red] {exc}")
+            return 2
+        return 0
+
+    return handler
+
+
+def _add_storage_subcommands(
+    sub: argparse._SubParsersAction, store: storage.RunStorage
+) -> None:
+    push_parser = sub.add_parser(
+        "push",
+        help="Upload a run's checkpoints to the project's Hugging Face repo",
         formatter_class=Formatter,
     )
-    datasets_parser.add_argument("name", help="The name of the dataset on Hugging Face")
+    push_parser.add_argument("path", help="Run directory to upload checkpoints from")
+    push_parser.set_defaults(func=_make_storage_handler("push", store))
+
+    pull_parser = sub.add_parser(
+        "pull",
+        help="Rehydrate a run's checkpoints from the project's Hugging Face repo",
+        formatter_class=Formatter,
+    )
+    pull_parser.add_argument("path", help="Run directory to rehydrate checkpoints into")
+    pull_parser.set_defaults(func=_make_storage_handler("pull", store))
 
 
 def parse_args(
-    registry: dict[str, Model], argv: list[str] | None = None
+    registry: dict[str, Model],
+    argv: list[str] | None = None,
+    *,
+    store: storage.RunStorage | None = None,
 ) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog="gradling",
         description="Gradling CLI",
         formatter_class=Formatter,
     )
+    store = store or storage.RunStorage(storage.HfApiTransport())
     sub = parser.add_subparsers(dest="command", required=True)
 
     _add_models_subcommand(sub, registry)
     _add_run_subcommand(sub, registry)
-    _add_datasets_subcommand(sub)
+    _add_storage_subcommands(sub, store)
 
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
+    load_dotenv()
     args = argv if argv is not None else sys.argv[1:]
     try:
         app = parse_args(MODELS, args)
