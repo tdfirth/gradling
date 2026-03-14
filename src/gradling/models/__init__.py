@@ -3,7 +3,7 @@ from collections.abc import Callable
 from pydantic import BaseModel
 
 from gradling.config import Config
-from gradling.models import gpt, gpt2, mlp
+from gradling.models import aiayn, gpt2, mlp
 
 
 class Command[Cfg: Config](BaseModel):
@@ -18,28 +18,27 @@ class Model[Cfg: Config](BaseModel):
 
 
 MODELS: dict[str, Model] = {
-    "gpt": Model(
-        cfg=gpt.GPTConfig,
-        description="Character-level GPT model and commands.",
+    "mlp": Model(
+        cfg=mlp.MLPConfig,
+        description="A simple MLP in vanilla jax",
+        commands={"train": Command(cfg=mlp.MLPConfig, fn=mlp.train)},
+    ),
+    "aiayn": Model(
+        cfg=aiayn.AIAYNConfig,
+        description="Decoder only transformer based on Attention is All You Need",
         commands={
-            "train": Command(cfg=gpt.GPTConfig, fn=gpt.train),
-            "sample": Command(cfg=gpt.GPTConfig, fn=gpt.sample),
+            "train": Command(cfg=aiayn.AIAYNConfig, fn=aiayn.train),
+            "sample": Command(cfg=aiayn.AIAYNConfig, fn=aiayn.sample),
         },
     ),
     "gpt2": Model(
         cfg=gpt2.GPT2Config,
-        description="Character-level GPT model and commands.",
+        description="GPT2 architecture",
         commands={
             "train": Command(cfg=gpt2.GPT2Config, fn=gpt2.train),
-            "sample": Command(cfg=gpt2.GPT2Config, fn=gpt2.sample),
             "data": Command(cfg=gpt2.DataConfig, fn=gpt2.data),
             "chat": Command(cfg=gpt2.ChatConfig, fn=gpt2.chat),
         },
-    ),
-    "mlp": Model(
-        cfg=mlp.MLPConfig,
-        description="A simple MLP in vanilla jax.",
-        commands={"train": Command(cfg=mlp.MLPConfig, fn=mlp.train)},
     ),
 }
 

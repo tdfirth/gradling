@@ -2,7 +2,7 @@ import jax
 from flax import nnx
 from jax import numpy as jnp
 
-from gradling.models.gpt import GPTConfig
+from gradling.models.aiayn import AIAYNConfig
 from gradling.modules import LayerNorm, MultiHeadAttention
 
 
@@ -46,8 +46,8 @@ class AttentionBlock(nnx.Module):
         return x
 
 
-class GPT(nnx.Module):
-    def __init__(self, cfg: GPTConfig, n_vocab: int):
+class AIAYN(nnx.Module):
+    def __init__(self, cfg: AIAYNConfig, n_vocab: int):
         self.cfg = cfg
         self.n_vocab = n_vocab
         rngs = nnx.Rngs(cfg.seed)

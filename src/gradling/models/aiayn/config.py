@@ -4,7 +4,7 @@ from gradling.config import Config
 
 
 @dataclass
-class GPTConfig(Config):
+class AIAYNConfig(Config):
     seed: int = 42
     batch_size: int = 32
     n_ctx: int = 8

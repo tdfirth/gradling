@@ -11,14 +11,14 @@ from jax import numpy as jnp
 
 import wandb
 from gradling.data import jax_random_iterator, loader, prepare_training_data
-from gradling.models.gpt.common import load_corpus, log
-from gradling.models.gpt.config import GPTConfig
-from gradling.models.gpt.model import GPT
+from gradling.models.aiayn.common import load_corpus, log
+from gradling.models.aiayn.config import AIAYNConfig
+from gradling.models.aiayn.model import AIAYN
 from gradling.run import Run
 from gradling.tokenizers import CharacterTokenizer
 
 
-def _loss_fn(model: GPT, xs: jax.Array, ys: jax.Array):
+def _loss_fn(model: AIAYN, xs: jax.Array, ys: jax.Array):
     logits = model(xs)
     loss = optax.softmax_cross_entropy(logits, ys).mean()
     return loss, logits
@@ -44,8 +44,8 @@ def path_matches(path, regex):
 
 def _run_training_loop(
     run: Run,
-    cfg: GPTConfig,
-    model: GPT,
+    cfg: AIAYNConfig,
+    model: AIAYN,
     optimizer: nnx.Optimizer,
     metrics: nnx.MultiMetric,
     rngs: nnx.Rngs,
@@ -55,7 +55,7 @@ def _run_training_loop(
 
     @nnx.jit
     def _train_step(
-        model: GPT,
+        model: AIAYN,
         optimizer: nnx.Optimizer,
         metrics: nnx.MultiMetric,
         rngs: nnx.Rngs,
@@ -69,7 +69,7 @@ def _run_training_loop(
 
     @nnx.jit
     def _eval_step(
-        model: GPT,
+        model: AIAYN,
         metrics: nnx.MultiMetric,
         rngs: nnx.Rngs,
         xs: jax.Array,
@@ -165,8 +165,8 @@ def _run_training_loop(
     run.checkpoint("final", model)
 
 
-def train(cfg: GPTConfig) -> None:
-    """Train a GPT."""
+def train(cfg: AIAYNConfig) -> None:
+    """Train a AIAYN."""
 
     rngs = nnx.Rngs(cfg.seed)
 
@@ -180,7 +180,7 @@ def train(cfg: GPTConfig) -> None:
 
     log.info("Starting training run with config %s", cfg)
     log.info("Initializing model")
-    model = GPT(cfg, len(tok.vocab))
+    model = AIAYN(cfg, len(tok.vocab))
 
     log.info("Initializing optimizer")
     optimizer = nnx.Optimizer(
@@ -216,7 +216,7 @@ def train(cfg: GPTConfig) -> None:
             "checkpoint_label": cfg.checkpoint_label,
         }
     )
-    run = Run.from_config("gpt", run_cfg)
+    run = Run.from_config("aiayn", run_cfg)
 
     _run_training_loop(
         run,

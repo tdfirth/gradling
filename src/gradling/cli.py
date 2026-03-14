@@ -134,6 +134,15 @@ def _add_run_subcommand(
             cmd_parser.set_defaults(func=_make_run_handler(cmd, cmd.cfg))
 
 
+def _add_datasets_subcommand(sub: argparse._SubParsersAction) -> None:
+    datasets_parser = sub.add_parser(
+        "dataset",
+        help="Download and prepare datasets from Hugging Face",
+        formatter_class=Formatter,
+    )
+    datasets_parser.add_argument("name", help="The name of the dataset on Hugging Face")
+
+
 def parse_args(
     registry: dict[str, Model], argv: list[str] | None = None
 ) -> argparse.Namespace:
@@ -146,6 +155,7 @@ def parse_args(
 
     _add_models_subcommand(sub, registry)
     _add_run_subcommand(sub, registry)
+    _add_datasets_subcommand(sub)
 
     return parser.parse_args(argv)
 

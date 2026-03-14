@@ -9,9 +9,9 @@ from jax import numpy as jnp
 from jax import random
 
 from gradling.data import jax_random_iterator, prepare_training_data
-from gradling.models.gpt.common import load_corpus, log
-from gradling.models.gpt.config import GPTConfig
-from gradling.models.gpt.model import GPT
+from gradling.models.aiayn.common import load_corpus, log
+from gradling.models.aiayn.config import AIAYNConfig
+from gradling.models.aiayn.model import AIAYN
 from gradling.run import Run
 from gradling.tokenizers import CharacterTokenizer, Tokenizer
 
@@ -55,8 +55,8 @@ def _sample_tokens(
         print("")
 
 
-def sample(cfg: GPTConfig) -> None:
-    """Sample from a GPT."""
+def sample(cfg: AIAYNConfig) -> None:
+    """Sample from the model."""
 
     if not cfg.run_path:
         msg = "run_path is required for sample command."
@@ -76,7 +76,7 @@ def sample(cfg: GPTConfig) -> None:
     it = jax_random_iterator(rngs, cfg.batch_size, cfg.n_ctx, dev_data)
 
     log.info("Initializing model")
-    model = GPT(cfg, len(tok.vocab))
+    model = AIAYN(cfg, len(tok.vocab))
 
     log.info("Restoring weights")
     run.load_checkpoint(cfg.checkpoint_label, model)

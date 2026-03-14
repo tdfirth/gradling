@@ -2,7 +2,7 @@ import pytest
 from flax import nnx
 
 from gradling.data import jax_random_iterator, prepare_training_data
-from gradling.models.gpt import GPT, GPTConfig
+from gradling.models.aiayn import AIAYN, AIAYNConfig
 from gradling.tokenizers import CharacterTokenizer
 
 CORPUS = "The quick brown fox jumped over the lazy dog."
@@ -16,7 +16,7 @@ def setup():
     it = jax_random_iterator(rngs, 2, 4, train)
 
     def model(**kwargs):
-        cfg = GPTConfig(
+        cfg = AIAYNConfig(
             seed=42,
             batch_size=2,
             n_ctx=4,
@@ -30,7 +30,7 @@ def setup():
             train_steps=1,
         )
         cfg = cfg.replace(**kwargs)
-        return GPT(cfg, len(tok.vocab))
+        return AIAYN(cfg, len(tok.vocab))
 
     yield model, it
 
