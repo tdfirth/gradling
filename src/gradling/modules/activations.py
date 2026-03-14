@@ -2,6 +2,20 @@ import math
 
 import jax
 from jax import lax
+from jax import numpy as jnp
+
+
+def relu(x: jax.Array) -> jax.Array:
+    return x.clip(0)
+
+
+def sigmoid(x: jax.Array) -> jax.Array:
+    return 1 / (1 + jnp.exp(-x))
+
+
+def swish(x: jax.Array) -> jax.Array:
+    return x * sigmoid(x)
+
 
 _SQRT_2 = math.sqrt(2.0)
 _SQRT_2_OVER_PI = math.sqrt(2.0 / math.pi)
