@@ -16,6 +16,7 @@ wheels/
 
 # Gradling
 experiments/**/checkpoints/*
+experiments/**/runs/debug/
 .env
 wandb
 data/cache/
