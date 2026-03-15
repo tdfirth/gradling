@@ -35,7 +35,6 @@ STUDIES: dict[str, Study] = {
         description="Decoder only transformer based on Attention is All You Need",
         commands={
             "train": Command(cfg=aiayn.AIAYNConfig, fn=aiayn.train, sinks=with_wandb),
-            "data": Command(cfg=aiayn.DataConfig, fn=aiayn.data),
             "chat": Command(cfg=aiayn.ChatConfig, fn=aiayn.chat),
         },
     ),

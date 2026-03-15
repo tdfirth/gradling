@@ -12,6 +12,10 @@ class Context:
     root: Path = ROOT
 
     @property
+    def data(self) -> Path:
+        return self.root / "data"
+
+    @property
     def experiments(self) -> Path:
         return self.root / "experiments"
 

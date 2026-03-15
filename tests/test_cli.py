@@ -68,9 +68,16 @@ def _run(
     argv: list[str],
     *,
     store: storage.RunStorage | None = None,
+    dataset_store: storage.DatasetTransport | None = None,
 ) -> int:
     try:
-        ns = cli.parse_args(ctx, registry, argv, store=store)
+        ns = cli.parse_args(
+            ctx,
+            registry,
+            argv,
+            store=store,
+            dataset_store=dataset_store,
+        )
         ns.func(ns)
     except SystemExit as exc:
         return exc.code if isinstance(exc.code, int) else 1
@@ -352,6 +359,77 @@ def test_pull_invokes_storage_handler(tmp_path):
 
     assert code == 0
     assert transport.pull_calls == [(run_path / "checkpoints", tmp_path)]
+
+
+class FakeDatasetStorage:
+    def __init__(self) -> None:
+        self.push_calls: list[str] = []
+        self.pull_calls: list[str] = []
+
+    def push(self, dataset_name: str) -> None:
+        self.push_calls.append(dataset_name)
+
+    def pull(self, dataset_name: str) -> None:
+        self.pull_calls.append(dataset_name)
+
+
+def test_datasets_prepare_dispatches(tmp_path, monkeypatch):
+    prepared = []
+
+    def fake_prepare(root, dataset_name):
+        from gradling.data import DatasetMeta
+
+        prepared.append(dataset_name)
+        d = root / "data" / "roneneldan" / "TinyStories"
+        d.mkdir(parents=True, exist_ok=True)
+        return DatasetMeta(
+            source=dataset_name,
+            repo="tdfirth/TinyStories",
+            tokenizer_name="gpt2",
+            dtype="uint16",
+            train_tokens=100,
+            dev_tokens=50,
+        )
+
+    monkeypatch.setattr(cli.datalib, "prepare", fake_prepare)
+
+    code = _run(
+        Context(root=tmp_path),
+        TEST_REGISTRY,
+        ["datasets", "prepare", "roneneldan/TinyStories"],
+        dataset_store=FakeDatasetStorage(),
+    )
+
+    assert code == 0
+    assert prepared == ["roneneldan/TinyStories"]
+
+
+def test_datasets_push_dispatches(tmp_path):
+    ds_store = FakeDatasetStorage()
+
+    code = _run(
+        Context(root=tmp_path),
+        TEST_REGISTRY,
+        ["datasets", "push", "roneneldan/TinyStories"],
+        dataset_store=ds_store,
+    )
+
+    assert code == 0
+    assert ds_store.push_calls == ["roneneldan/TinyStories"]
+
+
+def test_datasets_pull_dispatches(tmp_path):
+    ds_store = FakeDatasetStorage()
+
+    code = _run(
+        Context(root=tmp_path),
+        TEST_REGISTRY,
+        ["datasets", "pull", "roneneldan/TinyStories"],
+        dataset_store=ds_store,
+    )
+
+    assert code == 0
+    assert ds_store.pull_calls == ["roneneldan/TinyStories"]
 
 
 def test_main_loads_dotenv(monkeypatch):

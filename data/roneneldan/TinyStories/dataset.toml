@@ -1,0 +1,11 @@
+[dataset]
+source = "roneneldan/TinyStories"
+repo = "tdfirth/TinyStories"
+tokenizer = "gpt2"
+dtype = "uint16"
+
+[dataset.train]
+tokens = 473992236
+
+[dataset.dev]
+tokens = 4765918

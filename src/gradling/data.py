@@ -1,11 +1,15 @@
+from __future__ import annotations
+
 from collections.abc import Iterator
+from dataclasses import dataclass
 from pathlib import Path
 from queue import Queue
 from threading import Thread
-from typing import cast
+from typing import Any, cast
 
 import jax
 import numpy as np
+import tomlkit
 from datasets import Dataset, load_dataset
 from flax import nnx
 from jax import numpy as jnp
@@ -16,18 +20,123 @@ from gradling import logger
 from gradling.dir import ROOT
 from gradling.tokenizers import Tokenizer
 
+log = logger.get(__name__)
+
 DATA = ROOT / "data"
-CACHE = DATA / "cache"
 NAMES = DATA / "names.txt"
 SHAKESPEARE = DATA / "shakespeare.txt"
 
-CACHE.mkdir(parents=True, exist_ok=True)
-
-log = logger.get(__name__)
+DATASET_FILE = "dataset.toml"
 
 
-# TODO these all create the data on device immediately, need to move to a numpy
-# version and then rely on the loader to move things to device.
+@dataclass(frozen=True)
+class DatasetMeta:
+    source: str
+    repo: str
+    tokenizer_name: str
+    dtype: str
+    train_tokens: int
+    dev_tokens: int
+
+
+def dataset_dir(root: Path, dataset_name: str) -> Path:
+    return root / "data" / Path(*dataset_name.split("/"))
+
+
+def read_meta(path: Path) -> DatasetMeta:
+    doc = tomlkit.parse((path / DATASET_FILE).read_text()).unwrap()
+    ds = doc["dataset"]
+    return DatasetMeta(
+        source=ds["source"],
+        repo=ds["repo"],
+        tokenizer_name=ds["tokenizer"],
+        dtype=ds["dtype"],
+        train_tokens=ds["train"]["tokens"],
+        dev_tokens=ds["dev"]["tokens"],
+    )
+
+
+def write_meta(path: Path, meta: DatasetMeta) -> None:
+    doc: dict[str, Any] = {
+        "dataset": {
+            "source": meta.source,
+            "repo": meta.repo,
+            "tokenizer": meta.tokenizer_name,
+            "dtype": meta.dtype,
+            "train": {"tokens": meta.train_tokens},
+            "dev": {"tokens": meta.dev_tokens},
+        }
+    }
+    (path / DATASET_FILE).write_text(tomlkit.dumps(doc))
+
+
+def prepare(root: Path, dataset_name: str) -> DatasetMeta:
+    d = dataset_dir(root, dataset_name)
+    toml_path = d / DATASET_FILE
+    train_path = d / "train.npy"
+    dev_path = d / "dev.npy"
+
+    if toml_path.exists() and train_path.exists() and dev_path.exists():
+        log.info("Dataset %s already prepared", dataset_name)
+        return read_meta(d)
+
+    d.mkdir(parents=True, exist_ok=True)
+
+    tokenizer = cast(TokenizersBackend, AutoTokenizer.from_pretrained("gpt2"))
+
+    log.info("Downloading dataset %s", dataset_name)
+    ds = load_dataset(dataset_name).shuffle(seed=42)
+
+    log.info("Tokenizing train split")
+    train = tokenize_dataset(tokenizer, ds["train"], train_path)
+
+    log.info("Tokenizing dev split")
+    dev = tokenize_dataset(tokenizer, ds["validation"], dev_path)
+
+    _, dataset_short = dataset_name.split("/", 1)
+    meta = DatasetMeta(
+        source=dataset_name,
+        repo=f"tdfirth/{dataset_short}",
+        tokenizer_name="gpt2",
+        dtype="uint16",
+        train_tokens=len(train),
+        dev_tokens=len(dev),
+    )
+    write_meta(d, meta)
+    log.info("Dataset prepared at %s", d)
+    return meta
+
+
+def load(
+    root: Path, dataset_name: str
+) -> tuple[TokenizersBackend, np.memmap, np.memmap]:
+    d = dataset_dir(root, dataset_name)
+    toml_path = d / DATASET_FILE
+
+    if not toml_path.exists():
+        raise FileNotFoundError(
+            f"No dataset.toml for {dataset_name!r}. "
+            f"Run 'gradling datasets prepare {dataset_name}' first."
+        )
+
+    meta = read_meta(d)
+    train_path = d / "train.npy"
+    dev_path = d / "dev.npy"
+
+    if not train_path.exists() or not dev_path.exists():
+        raise FileNotFoundError(
+            f"Data files missing for {dataset_name!r}. "
+            f"Run 'gradling datasets pull {dataset_name}' first."
+        )
+
+    tokenizer = cast(
+        TokenizersBackend, AutoTokenizer.from_pretrained(meta.tokenizer_name)
+    )
+    train = np.memmap(train_path, dtype=np.dtype(meta.dtype))
+    dev = np.memmap(dev_path, dtype=np.dtype(meta.dtype))
+    return tokenizer, train, dev
+
+
 def prepare_training_data(tok: Tokenizer, corpus: str) -> tuple[jax.Array, jax.Array]:
     train_n = int(len(corpus) * 0.9)
     train = jnp.array(tok.encode("".join(list(corpus[:train_n]))), dtype=jnp.int32)
@@ -55,7 +164,6 @@ def tokenize_dataset(tokenizer, dataset: Dataset, path: Path) -> np.memmap:
 
     log.info("Writing to memory mapped file")
     arr = np.memmap(path, dtype=np.uint16, mode="w+", shape=(token_count,))
-    # TODO this is hardcoded for GPT2 tokenizer
     eot = tokenizer("<|endoftext|>")["input_ids"][0]
     idx = 0
     for sample in tqdm(
@@ -67,26 +175,6 @@ def tokenize_dataset(tokenizer, dataset: Dataset, path: Path) -> np.memmap:
         idx += 1
 
     return arr
-
-
-def create_dataset(dataset_name: str) -> tuple[TokenizersBackend, np.memmap, np.memmap]:
-    file_name = dataset_name.replace("/", "-")
-    test_path = CACHE / f"{file_name}-train.npy"
-    dev_path = CACHE / f"{file_name}-dev.npy"
-    tokenizer = cast(TokenizersBackend, AutoTokenizer.from_pretrained("gpt2"))
-    log.info("Checking if dataset already exists")
-    if test_path.exists() and dev_path.exists():
-        log.info("Loading cached dataset")
-        test = np.memmap(test_path, dtype=np.uint16)
-        dev = np.memmap(dev_path, dtype=np.uint16)
-        return tokenizer, test, dev
-    log.info("Downloading dataset")
-    dataset = load_dataset(dataset_name).shuffle(seed=42)
-    log.info("Tokenizing test")
-    test = tokenize_dataset(tokenizer, dataset["train"], test_path)
-    log.info("Tokenizing dev")
-    dev = tokenize_dataset(tokenizer, dataset["validation"], dev_path)
-    return tokenizer, test, dev
 
 
 def jax_random_iterator(
@@ -129,5 +217,5 @@ def loader(batch_iterator: Iterator, size: int = 2):
 
     while (batch := q.get()) is not _SENTINEL:
         if isinstance(batch, Exception):
-            raise batch  # Re-raise the exception on the main thread.
+            raise batch
         yield batch

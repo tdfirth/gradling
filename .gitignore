@@ -20,3 +20,4 @@ experiments/**/runs/debug/
 .env
 wandb
 data/cache/
+data/**/*.npy

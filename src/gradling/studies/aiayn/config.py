@@ -20,3 +20,4 @@ class AIAYNConfig(Config):
     experiment_name: str = "baseline"
     run_path: str = ""
     checkpoint_label: str = "final"
+    nl: str = "relu"

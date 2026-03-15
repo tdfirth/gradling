@@ -12,7 +12,7 @@ from jax import numpy as jnp
 
 import wandb
 from gradling import logger
-from gradling.data import create_dataset, loader, random_iterator
+from gradling.data import load, loader, random_iterator
 from gradling.run import Run
 from gradling.studies.aiayn.config import AIAYNConfig
 from gradling.studies.aiayn.model import AIAYN
@@ -174,7 +174,7 @@ def train(run: Run[AIAYNConfig]) -> None:
     rngs = nnx.Rngs(cfg.seed)
 
     log.info("Loading dataset")
-    tok, train_data, dev_data = create_dataset("roneneldan/TinyStories")
+    tok, train_data, dev_data = load(run.ctx.root, "roneneldan/TinyStories")
 
     log.info("Starting training run with config %s", cfg)
     log.info("Initializing model")

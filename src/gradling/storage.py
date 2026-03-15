@@ -1,7 +1,3 @@
-"""
-Sync run checkpoints with the project's Hugging Face repo.
-"""
-
 from __future__ import annotations
 
 import shutil
@@ -108,3 +104,58 @@ class RunStorage:
 
     def _checkpoints_path(self, run_path: Path) -> Path:
         return self._run_dir(run_path) / CHECKPOINTS
+
+
+class DatasetTransport(Protocol):
+    def push(self, dataset_name: str) -> None: ...
+    def pull(self, dataset_name: str) -> None: ...
+
+
+class HfDatasetStorage:
+    def __init__(self, ctx: Context) -> None:
+        self.ctx = ctx
+
+    def _token(self) -> str:
+        self.ctx.load_dotenv()
+        token = get_token()
+        if token is None:
+            raise RuntimeError("Missing Hugging Face token. Set HF_TOKEN in .env.")
+        return token
+
+    def push(self, dataset_name: str) -> None:
+        from gradling.data import dataset_dir, read_meta
+
+        d = dataset_dir(self.ctx.root, dataset_name)
+        meta = read_meta(d)
+        token = self._token()
+        api = HfApi(token=token)
+        api.create_repo(repo_id=meta.repo, repo_type="dataset", exist_ok=True)
+        log.info(
+            "Uploading %s to hf://%s",
+            d.relative_to(self.ctx.root),
+            meta.repo,
+        )
+        api.upload_folder(
+            repo_id=meta.repo,
+            repo_type="dataset",
+            folder_path=d,
+            path_in_repo=".",
+            commit_message=f"gradling datasets push {dataset_name}",
+        )
+
+    def pull(self, dataset_name: str) -> None:
+        from gradling.data import dataset_dir, read_meta
+
+        d = dataset_dir(self.ctx.root, dataset_name)
+        meta = read_meta(d)
+        log.info(
+            "Downloading hf://%s to %s",
+            meta.repo,
+            d.relative_to(self.ctx.root),
+        )
+        snapshot_download(
+            repo_id=meta.repo,
+            repo_type="dataset",
+            token=self._token(),
+            local_dir=d,
+        )

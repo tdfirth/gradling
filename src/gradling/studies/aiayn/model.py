@@ -1,19 +1,46 @@
+from typing import Literal, TypeGuard, get_args
+
 import jax
 from flax import nnx
 from jax import numpy as jnp
 
+from gradling import logger
 from gradling.modules import LayerNorm, MultiHeadAttention
+from gradling.modules.glu import Geglu, Swiglu
 from gradling.studies.aiayn.config import AIAYNConfig
+
+log = logger.get(__name__)
+
+NonLinearity = Literal["relu", "swiglu", "geglu"]
+
+
+def scale_by(n: int, factor: float) -> int:
+    return int(256 * (n * factor // 256))
 
 
 class FeedForward(nnx.Module):
-    def __init__(self, n_emb: int, dropout: float, rngs: nnx.Rngs):
-        self.net = nnx.Sequential(
-            nnx.Linear(in_features=n_emb, out_features=4 * n_emb, rngs=rngs),
-            nnx.relu,
-            nnx.Linear(in_features=4 * n_emb, out_features=n_emb, rngs=rngs),
-            nnx.Dropout(dropout, rngs=rngs),
-        )
+    def __init__(
+        self, n_emb: int, dropout: float, rngs: nnx.Rngs, *, nl: NonLinearity = "relu"
+    ):
+        if nl == "relu":
+            log.debug("Using relu FFN")
+            self.net = nnx.Sequential(
+                nnx.Linear(
+                    in_features=n_emb, out_features=4 * n_emb, rngs=rngs, use_bias=True
+                ),
+                nnx.relu,
+                nnx.Linear(
+                    in_features=4 * n_emb, out_features=n_emb, rngs=rngs, use_bias=True
+                ),
+                nnx.Dropout(dropout, rngs=rngs),
+            )
+        else:
+            log.debug(f"Using {nl} FFN")
+            nl_mod = Swiglu if nl == "swiglu" else Geglu
+            self.net = nnx.Sequential(
+                nl_mod(d_model=n_emb, d_hidden=scale_by(n_emb, 8 / 3), rngs=rngs),
+                nnx.Dropout(dropout, rngs=rngs),
+            )
 
     def __call__(self, x: jax.Array):
         return self.net(x)
@@ -28,6 +55,8 @@ class AttentionBlock(nnx.Module):
         head_size: int,
         dropout: float,
         rngs: nnx.Rngs,
+        *,
+        nl: NonLinearity = "relu",
     ):
         self.sa_heads = MultiHeadAttention(
             n_ctx,
@@ -36,7 +65,7 @@ class AttentionBlock(nnx.Module):
             rngs=rngs,
             dropout=dropout,
         )
-        self.ff = FeedForward(n_emb, dropout, rngs)
+        self.ff = FeedForward(n_emb, dropout, rngs, nl=nl)
         self.ln1 = LayerNorm(n_emb)
         self.ln2 = LayerNorm(n_emb)
 
@@ -44,6 +73,16 @@ class AttentionBlock(nnx.Module):
         x = x + self.sa_heads(self.ln1(x))
         x = x + self.ff(self.ln2(x))
         return x
+
+
+def validate_non_linearity(nl: str) -> NonLinearity:
+    def is_non_linearity(nl: str) -> TypeGuard[NonLinearity]:
+        return nl in get_args(NonLinearity)
+
+    if not is_non_linearity(nl):
+        raise ValueError(f"Unsupported nonlinearity {nl}")
+
+    return nl
 
 
 class AIAYN(nnx.Module):
@@ -64,6 +103,7 @@ class AIAYN(nnx.Module):
                     cfg.head_size,
                     cfg.dropout,
                     rngs,
+                    nl=validate_non_linearity(cfg.nl),
                 )
                 for _ in range(cfg.num_blocks)
             ],

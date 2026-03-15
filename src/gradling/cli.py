@@ -13,6 +13,7 @@ from rich.table import Table
 from rich_argparse import RichHelpFormatter
 from tomlkit.exceptions import ParseError
 
+from gradling import data as datalib
 from gradling import run as runlib
 from gradling import storage
 from gradling.config import Config
@@ -127,11 +128,13 @@ class App:
         ctx: Context,
         registry: dict[str, Study],
         store: storage.RunStorage,
+        dataset_store: storage.DatasetTransport,
         console: Console | None = None,
     ) -> None:
         self.ctx = ctx
         self.registry = registry
         self.store = store
+        self.dataset_store = dataset_store
         self.console = console or Console()
 
     def _get_study(self, study_name: str) -> Study:
@@ -236,6 +239,7 @@ class App:
         command.fn(run)
 
     def debug(self, ns: argparse.Namespace, command: Command) -> None:
+        logging.getLogger("gradling").setLevel(logging.DEBUG)
         experiment = self._resolve_experiment(ns.study_name, ns.experiment)
         overrides = _config_overrides(ns, command.cfg)
         resolved_cfg = command.cfg(**{**experiment.cfg, **overrides}).to_dict()
@@ -255,6 +259,20 @@ class App:
     def run_pull(self, ns: argparse.Namespace) -> None:
         self.store.pull(self._run_rel_path(ns.study_name, ns.experiment, ns.run_id))
 
+    def dataset_prepare(self, ns: argparse.Namespace) -> None:
+        meta = datalib.prepare(self.ctx.root, ns.dataset_name)
+        d = datalib.dataset_dir(self.ctx.root, ns.dataset_name)
+        self.console.print(self.ctx.display_path(d))
+        self.console.print(
+            f"train: {meta.train_tokens:,} tokens, dev: {meta.dev_tokens:,} tokens"
+        )
+
+    def dataset_push(self, ns: argparse.Namespace) -> None:
+        self.dataset_store.push(ns.dataset_name)
+
+    def dataset_pull(self, ns: argparse.Namespace) -> None:
+        self.dataset_store.pull(ns.dataset_name)
+
     def build_parser(self) -> argparse.ArgumentParser:
         parser = argparse.ArgumentParser(
             prog="gradling",
@@ -267,6 +285,7 @@ class App:
         self._add_experiment(sub)
         self._add_run(sub)
         self._add_debug(sub)
+        self._add_datasets(sub)
 
         return parser
 
@@ -370,6 +389,24 @@ class App:
                 _add_config_flags(p, cmd.cfg, exclude=HIDDEN_CONFIG_FIELDS)
                 p.set_defaults(func=partial(self.debug, command=cmd))
 
+    def _add_datasets(self, sub: argparse._SubParsersAction) -> None:
+        datasets = _subparser(sub, "datasets", help="Prepare and sync datasets")
+        ds_sub = datasets.add_subparsers(dest="datasets_command", required=True)
+
+        ds_name_help = "HF dataset name (e.g. roneneldan/TinyStories)"
+
+        p = _subparser(ds_sub, "prepare", help="Download and tokenize a dataset")
+        p.add_argument("dataset_name", help=ds_name_help)
+        p.set_defaults(func=self.dataset_prepare)
+
+        p = _subparser(ds_sub, "push", help="Upload a prepared dataset to HF")
+        p.add_argument("dataset_name", help=ds_name_help)
+        p.set_defaults(func=self.dataset_push)
+
+        p = _subparser(ds_sub, "pull", help="Download a prepared dataset from HF")
+        p.add_argument("dataset_name", help=ds_name_help)
+        p.set_defaults(func=self.dataset_pull)
+
     def _add_run_pull(self, run_sub: argparse._SubParsersAction) -> None:
         p = _subparser(
             run_sub, "pull", help="Download run checkpoints from Hugging Face"
@@ -385,11 +422,14 @@ def parse_args(
     argv: list[str] | None = None,
     *,
     store: storage.RunStorage | None = None,
+    dataset_store: storage.DatasetTransport | None = None,
 ) -> argparse.Namespace:
     args = argv if argv is not None else sys.argv[1:]
     if store is None:
         store = storage.RunStorage(ctx, storage.HfApiTransport(ctx))
-    app = App(ctx, registry, store)
+    if dataset_store is None:
+        dataset_store = storage.HfDatasetStorage(ctx)
+    app = App(ctx, registry, store, dataset_store)
     parser = app.build_parser()
     return parser.parse_args(args)
 
