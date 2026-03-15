@@ -257,6 +257,63 @@ def test_run_chat_dispatches_to_chat_command(tmp_path):
     assert captured[0].cfg.max_tokens == 99
 
 
+def test_debug_dispatches_command(tmp_path):
+    captured: list[Run[CliConfigFixture]] = []
+
+    def train(run: Run[CliConfigFixture]) -> None:
+        captured.append(run)
+
+    registry = {
+        "test_model": Study(
+            cfg=CliConfigFixture,
+            commands={
+                "train": Command(cfg=CliConfigFixture, fn=train),
+                "chat": Command(cfg=ChatConfigFixture, fn=_noop_chat),
+            },
+        )
+    }
+    experiment_path = tmp_path / "experiments" / "test_model" / "baseline"
+    _write_experiment(experiment_path)
+
+    code = _run(
+        Context(root=tmp_path),
+        registry,
+        ["debug", "test_model", "train", "baseline"],
+    )
+
+    assert code == 0
+    assert len(captured) == 1
+    assert captured[0].id == "debug"
+
+
+def test_debug_overwrites_previous_debug_run(tmp_path):
+    captured: list[Run[CliConfigFixture]] = []
+
+    def train(run: Run[CliConfigFixture]) -> None:
+        captured.append(run)
+
+    registry = {
+        "test_model": Study(
+            cfg=CliConfigFixture,
+            commands={
+                "train": Command(cfg=CliConfigFixture, fn=train),
+            },
+        )
+    }
+    experiment_path = tmp_path / "experiments" / "test_model" / "baseline"
+    _write_experiment(experiment_path)
+
+    ctx = Context(root=tmp_path)
+    _run(ctx, registry, ["debug", "test_model", "train", "baseline"])
+    _run(ctx, registry, ["debug", "test_model", "train", "baseline"])
+
+    assert len(captured) == 2
+    debug_path = experiment_path / "runs" / "debug"
+    assert debug_path.exists()
+    runs = list((experiment_path / "runs").iterdir())
+    assert len(runs) == 1
+
+
 def test_unknown_command():
     with pytest.raises(SystemExit):
         cli.parse_args(Context(), TEST_REGISTRY, ["bogus"])

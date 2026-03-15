@@ -17,7 +17,7 @@ from gradling import run as runlib
 from gradling import storage
 from gradling.config import Config
 from gradling.context import Context
-from gradling.metrics import SinkFactory, log_only
+from gradling.metrics import SinkFactory, log_only, with_wandb
 from gradling.studies import STUDIES, Command, Study
 
 log = logging.getLogger(__name__)
@@ -235,6 +235,20 @@ class App:
         )
         command.fn(run)
 
+    def debug(self, ns: argparse.Namespace, command: Command) -> None:
+        experiment = self._resolve_experiment(ns.study_name, ns.experiment)
+        overrides = _config_overrides(ns, command.cfg)
+        resolved_cfg = command.cfg(**{**experiment.cfg, **overrides}).to_dict()
+        path = experiment.create_debug_run(resolved_cfg)
+        sink_factory: SinkFactory = with_wandb if ns.wandb else log_only
+        run = runlib.Run.from_path(
+            self.ctx,
+            path,
+            cfg_cls=command.cfg,
+            sink_factory=sink_factory,
+        )
+        command.fn(run)
+
     def run_push(self, ns: argparse.Namespace) -> None:
         self.store.push(self._run_rel_path(ns.study_name, ns.experiment, ns.run_id))
 
@@ -252,6 +266,7 @@ class App:
         self._add_study(sub)
         self._add_experiment(sub)
         self._add_run(sub)
+        self._add_debug(sub)
 
         return parser
 
@@ -335,6 +350,25 @@ class App:
         p.add_argument("experiment", help="Experiment name")
         p.add_argument("run_id", help="Run ID")
         p.set_defaults(func=self.run_push)
+
+    def _add_debug(self, sub: argparse._SubParsersAction) -> None:
+        debug = _subparser(
+            sub, "debug", help="Run a command in debug mode (no wandb, overwrites run)"
+        )
+        debug_sub = debug.add_subparsers(dest="study_name", required=True)
+
+        for name, spec in self.registry.items():
+            study_parser = _subparser(debug_sub, name, help=spec.description)
+            cmd_sub = study_parser.add_subparsers(dest="debug_command", required=True)
+
+            for cmd_name, cmd in spec.commands.items():
+                p = _subparser(cmd_sub, cmd_name, help=f"Debug {cmd_name}")
+                p.add_argument("experiment", help="Experiment name")
+                p.add_argument(
+                    "--wandb", action="store_true", default=False, help="Enable wandb"
+                )
+                _add_config_flags(p, cmd.cfg, exclude=HIDDEN_CONFIG_FIELDS)
+                p.set_defaults(func=partial(self.debug, command=cmd))
 
     def _add_run_pull(self, run_sub: argparse._SubParsersAction) -> None:
         p = _subparser(

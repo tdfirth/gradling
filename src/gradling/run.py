@@ -127,6 +127,32 @@ class Experiment:
         )
         return path
 
+    def create_debug_run(self, cfg: dict[str, Any]) -> Path:
+        path = self.path / RUNS / "debug"
+        if path.exists():
+            import shutil
+
+            shutil.rmtree(path)
+        path.mkdir(parents=True)
+
+        run_cfg = dict(cfg)
+        run_cfg["experiment_name"] = self.name
+        run_cfg["run_path"] = self.ctx.display_path(path)
+        _run_file(path).write_text(
+            tomlkit.dumps(
+                {
+                    "run": {
+                        "id": "debug",
+                        "study": self.study,
+                        "experiment": self.name,
+                        "notes": "debug run",
+                    },
+                    "config": run_cfg,
+                }
+            )
+        )
+        return path
+
     def list_runs(self) -> list[Path]:
         if not self.runs.exists():
             return []
