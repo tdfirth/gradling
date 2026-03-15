@@ -1,5 +1,5 @@
 [experiment]
-model = "aiayn"
+study = "aiayn"
 name = "baseline"
 notes = ""
 

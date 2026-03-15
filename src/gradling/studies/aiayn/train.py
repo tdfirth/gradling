@@ -15,9 +15,9 @@ import wandb
 from gradling import logger
 from gradling.context import Context
 from gradling.data import create_dataset, loader, random_iterator
-from gradling.models.aiayn.config import AIAYNConfig
-from gradling.models.aiayn.model import AIAYN
 from gradling.run import Run
+from gradling.studies.aiayn.config import AIAYNConfig
+from gradling.studies.aiayn.model import AIAYN
 
 log = logger.get(__name__)
 

@@ -46,14 +46,14 @@ class Experiment:
         ctx: Context,
         path: Path,
         *,
-        model: str,
+        study: str,
         name: str,
         notes: str,
         cfg: dict[str, Any],
     ) -> None:
         self.ctx = ctx
         self.path = path
-        self.model = model
+        self.study = study
         self.name = name
         self.notes = notes
         self.cfg = cfg
@@ -64,12 +64,12 @@ class Experiment:
     def create(
         cls,
         ctx: Context,
-        model: str,
+        study: str,
         name: str,
         notes: str,
         cfg: dict[str, Any],
     ) -> Self:
-        path = ctx.experiments / model / name
+        path = ctx.experiments / study / name
         if path.exists():
             raise RuntimeError(f"Experiment {ctx.display_path(path)} already exists.")
         path.mkdir(parents=True)
@@ -81,7 +81,7 @@ class Experiment:
             tomlkit.dumps(
                 {
                     "experiment": {
-                        "model": model,
+                        "study": study,
                         "name": name,
                         "notes": notes,
                     },
@@ -92,7 +92,7 @@ class Experiment:
         return cls(
             ctx,
             path,
-            model=model,
+            study=study,
             name=name,
             notes=notes,
             cfg=experiment_cfg,
@@ -107,7 +107,7 @@ class Experiment:
         return cls(
             ctx,
             path,
-            model=cast(str, experiment["model"]),
+            study=cast(str, experiment["study"]),
             name=cast(str, experiment["name"]),
             notes=cast(str, experiment.get("notes", "")),
             cfg=cfg,
@@ -174,17 +174,17 @@ class Run:
     def from_config(
         cls,
         ctx: Context,
-        model: str,
+        study: str,
         experiment: str,
         cfg: dict[str, Any],
         *,
         metrics_factory: MetricsFactory = Metrics,
     ) -> Self:
-        experiment_path = ctx.experiments / model / experiment
+        experiment_path = ctx.experiments / study / experiment
         spec = (
             Experiment.from_path(ctx, experiment_path)
             if experiment_path.exists()
-            else Experiment.create(ctx, model, experiment, "", cfg)
+            else Experiment.create(ctx, study, experiment, "", cfg)
         )
         run = spec.create_run("", cfg, metrics_factory=metrics_factory)
         return cls.from_path(
@@ -216,7 +216,6 @@ class Run:
             notes=cast(str, run.get("notes", "")),
         )
 
-    # TODO handle optimizer state as well as weights.
     def checkpoint(self, label: str, model: nnx.Module):
         state = nnx.state(model)
         self.checkpointer.save(self.checkpoints / label, state)

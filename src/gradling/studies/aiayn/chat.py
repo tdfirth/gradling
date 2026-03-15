@@ -15,8 +15,8 @@ from transformers import AutoTokenizer, TokenizersBackend
 from gradling import logger
 from gradling.config import Config
 from gradling.context import Context
-from gradling.models.aiayn.model import AIAYN, AIAYNConfig
 from gradling.run import Run
+from gradling.studies.aiayn.model import AIAYN, AIAYNConfig
 
 log = logger.get(__name__)
 

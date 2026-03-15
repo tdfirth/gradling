@@ -40,7 +40,7 @@ def test_experiment_create_writes_toml():
 
         assert experiment.path == ctx.experiments / "aiayn" / "baseline"
         doc = tomlkit.parse((experiment.path / "experiment.toml").read_text()).unwrap()
-        assert doc["experiment"]["model"] == "aiayn"
+        assert doc["experiment"]["study"] == "aiayn"
         assert doc["experiment"]["name"] == "baseline"
         assert doc["experiment"]["notes"] == "baseline notes"
         assert doc["config"]["experiment_name"] == "baseline"

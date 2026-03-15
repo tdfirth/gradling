@@ -17,7 +17,7 @@ from gradling import run as runlib
 from gradling import storage
 from gradling.config import Config
 from gradling.context import Context
-from gradling.models import MODELS, Command, Model
+from gradling.studies import STUDIES, Command, Study
 
 log = logging.getLogger(__name__)
 
@@ -84,13 +84,25 @@ def _config_overrides(ns: argparse.Namespace, cfg_cls: type[Config]) -> dict[str
     return {k: v for k, v in vars(ns).items() if k in keys}
 
 
-def _models_table(registry: dict[str, Model]) -> Table:
-    table = Table(title="Registered Models", highlight=True)
-    table.add_column("Model", style="bold cyan")
+def _studies_table(registry: dict[str, Study]) -> Table:
+    table = Table(title="Registered Studies", highlight=True)
+    table.add_column("Study", style="bold cyan")
     table.add_column("Config")
     table.add_column("Description", style="dim")
-    for name, model in sorted(registry.items()):
-        table.add_row(name, model.cfg.__name__, model.description or "-")
+    for name, study in sorted(registry.items()):
+        table.add_row(name, study.cfg.__name__, study.description or "-")
+    return table
+
+
+def _experiments_table(
+    ctx: Context, study_name: str, experiments: list[runlib.Experiment]
+) -> Table:
+    table = Table(title=f"Experiments for {study_name}", highlight=True)
+    table.add_column("Experiment", style="bold cyan")
+    table.add_column("Path")
+    table.add_column("Notes", style="dim")
+    for exp in experiments:
+        table.add_row(exp.name, ctx.display_path(exp.path), exp.notes.strip() or "-")
     return table
 
 
@@ -109,68 +121,11 @@ def _runs_table(
     return table
 
 
-def _pre_parse_argv(argv: list[str]) -> tuple[str | None, str | None, str | None]:
-    bootstrap = argparse.ArgumentParser(add_help=False)
-    bootstrap.add_argument("command", nargs="?")
-    bootstrap.add_argument("sub_command", nargs="?")
-    bootstrap.add_argument("path", nargs="?")
-    try:
-        ns, _ = bootstrap.parse_known_args(argv)
-    except SystemExit:
-        return None, None, None
-    return ns.command, ns.sub_command, ns.path
-
-
-def _resolve_dynamic_cfg(
-    ctx: Context,
-    registry: dict[str, Model],
-    argv: list[str],
-    sub_command: str,
-    model_command: str,
-) -> type[Config] | None:
-    cmd, sub, path = _pre_parse_argv(argv)
-    if cmd != "run" or sub != sub_command or path is None:
-        return None
-
-    try:
-        if model_command == "create":
-            experiment = runlib.Experiment.from_path(ctx, Path(path))
-            spec = registry.get(experiment.model)
-            return spec.cfg if spec is not None else None
-
-        _, _, command = _load_run_command(ctx, registry, Path(path), model_command)
-        return command.cfg
-    except Exception:
-        log.debug(
-            "Failed to resolve %s config at %s", model_command, path, exc_info=True
-        )
-        return None
-
-
-def _load_run_command(
-    ctx: Context,
-    registry: dict[str, Model],
-    run_path: Path,
-    command_name: str,
-) -> tuple[runlib.Run, Model, Command]:
-    run = runlib.Run.from_path(ctx, run_path)
-    experiment = runlib.Experiment.from_path(ctx, run.path.parent.parent)
-    spec = registry.get(experiment.model)
-    if spec is None:
-        msg = f"Unknown model {experiment.model!r}."
-        raise RuntimeError(msg)
-    command = spec.commands.get(command_name)
-    if command is None:
-        msg = f"Model {experiment.model!r} has no {command_name!r} command."
-        raise RuntimeError(msg)
-    return run, spec, command
-
-
 class App:
     def __init__(
         self,
         ctx: Context,
-        registry: dict[str, Model],
+        registry: dict[str, Study],
         store: storage.RunStorage,
         console: Console | None = None,
     ) -> None:
@@ -179,8 +134,31 @@ class App:
         self.store = store
         self.console = console or Console()
 
-    def models_list(self, _ns: argparse.Namespace) -> None:
-        self.console.print(_models_table(self.registry))
+    def _get_study(self, study_name: str) -> Study:
+        spec = self.registry.get(study_name)
+        if spec is None:
+            raise RuntimeError(f"Unknown study {study_name!r}.")
+        return spec
+
+    def _experiment_path(self, study_name: str, experiment: str) -> Path:
+        return self.ctx.experiments / study_name / experiment
+
+    def _run_rel_path(self, study_name: str, experiment: str, run_id: str) -> Path:
+        return Path("experiments") / study_name / experiment / "runs" / run_id
+
+    def _resolve_experiment(
+        self, study_name: str, experiment: str
+    ) -> runlib.Experiment:
+        return runlib.Experiment.from_path(
+            self.ctx, self._experiment_path(study_name, experiment)
+        )
+
+    def _resolve_run(self, study_name: str, experiment: str, run_id: str) -> runlib.Run:
+        path = self._experiment_path(study_name, experiment) / "runs" / run_id
+        return runlib.Run.from_path(self.ctx, path)
+
+    def study_list(self, _ns: argparse.Namespace) -> None:
+        self.console.print(_studies_table(self.registry))
 
     def experiment_create(self, ns: argparse.Namespace, cfg_cls: type[Config]) -> None:
         name = ns.name or self.console.input("Experiment name: ").strip()
@@ -190,35 +168,43 @@ class App:
 
         overrides = _config_overrides(ns, cfg_cls)
         cfg = cfg_cls(**overrides).to_dict()
-        experiment = runlib.Experiment.create(self.ctx, ns.model_name, name, notes, cfg)
+        experiment = runlib.Experiment.create(self.ctx, ns.study_name, name, notes, cfg)
         self.console.print(self.ctx.display_path(experiment.path))
 
-    def run_create(self, ns: argparse.Namespace) -> None:
-        experiment = runlib.Experiment.from_path(self.ctx, Path(ns.experiment_path))
-        spec = self.registry.get(experiment.model)
-        if spec is None:
-            raise RuntimeError(f"Unknown model {experiment.model!r}.")
+    def experiment_list(self, ns: argparse.Namespace) -> None:
+        study_name = ns.study_name
+        study_dir = self.ctx.experiments / study_name
+        if not study_dir.exists():
+            self.console.print(_experiments_table(self.ctx, study_name, []))
+            return
+        experiments = []
+        for p in sorted(study_dir.iterdir()):
+            if p.is_dir() and (p / "experiment.toml").exists():
+                experiments.append(runlib.Experiment.from_path(self.ctx, p))
+        self.console.print(_experiments_table(self.ctx, study_name, experiments))
 
-        overrides = _config_overrides(ns, spec.cfg)
-        resolved_cfg = spec.cfg(**{**experiment.cfg, **overrides}).to_dict()
+    def run_create(self, ns: argparse.Namespace, cfg_cls: type[Config]) -> None:
+        experiment = self._resolve_experiment(ns.study_name, ns.experiment)
+        overrides = _config_overrides(ns, cfg_cls)
+        resolved_cfg = cfg_cls(**{**experiment.cfg, **overrides}).to_dict()
         run = experiment.create_run(ns.notes or "", resolved_cfg)
         self.console.print(self.ctx.display_path(run.path))
 
     def run_list(self, ns: argparse.Namespace) -> None:
-        experiment = runlib.Experiment.from_path(self.ctx, Path(ns.experiment_path))
+        experiment = self._resolve_experiment(ns.study_name, ns.experiment)
         self.console.print(_runs_table(self.ctx, experiment, experiment.list_runs()))
 
     def run_start(self, ns: argparse.Namespace) -> None:
-        run, _, command = _load_run_command(
-            self.ctx, self.registry, Path(ns.path), "train"
-        )
+        spec = self._get_study(ns.study_name)
+        command = spec.commands.get("train")
+        if command is None:
+            raise RuntimeError(f"Study {ns.study_name!r} has no 'train' command.")
+        run = self._resolve_run(ns.study_name, ns.experiment, ns.run_id)
         cfg = command.cfg(**run.cfg)
         command.fn(cfg)
 
-    def run_chat(self, ns: argparse.Namespace) -> None:
-        run, _, command = _load_run_command(
-            self.ctx, self.registry, Path(ns.path), "chat"
-        )
+    def run_chat(self, ns: argparse.Namespace, command: Command) -> None:
+        run = self._resolve_run(ns.study_name, ns.experiment, ns.run_id)
         overrides = _config_overrides(ns, command.cfg)
         cfg = command.cfg(
             run_path=run.cfg.get("run_path", self.ctx.display_path(run.path)),
@@ -227,12 +213,12 @@ class App:
         command.fn(cfg)
 
     def run_push(self, ns: argparse.Namespace) -> None:
-        self.store.push(Path(ns.path))
+        self.store.push(self._run_rel_path(ns.study_name, ns.experiment, ns.run_id))
 
     def run_pull(self, ns: argparse.Namespace) -> None:
-        self.store.pull(Path(ns.path))
+        self.store.pull(self._run_rel_path(ns.study_name, ns.experiment, ns.run_id))
 
-    def build_parser(self, argv: list[str]) -> argparse.ArgumentParser:
+    def build_parser(self) -> argparse.ArgumentParser:
         parser = argparse.ArgumentParser(
             prog="gradling",
             description="Gradling CLI",
@@ -240,83 +226,105 @@ class App:
         )
         sub = parser.add_subparsers(dest="command", required=True)
 
-        self._add_models(sub)
+        self._add_study(sub)
         self._add_experiment(sub)
-        self._add_run(sub, argv)
+        self._add_run(sub)
 
         return parser
 
-    def _add_models(self, sub: argparse._SubParsersAction) -> None:
-        models = _subparser(sub, "models", help="List and inspect models")
-        models_sub = models.add_subparsers(dest="models_command", required=True)
+    def _add_study(self, sub: argparse._SubParsersAction) -> None:
+        study = _subparser(sub, "study", help="List and inspect studies")
+        study_sub = study.add_subparsers(dest="study_command", required=True)
 
-        p = _subparser(models_sub, "list", help="List all registered models")
-        p.set_defaults(func=self.models_list)
+        p = _subparser(study_sub, "list", help="List all registered studies")
+        p.set_defaults(func=self.study_list)
 
     def _add_experiment(self, sub: argparse._SubParsersAction) -> None:
         experiment = _subparser(
             sub, "experiment", help="Create and inspect experiments"
         )
-        experiment_sub = experiment.add_subparsers(
-            dest="experiment_command", required=True
-        )
+        experiment_sub = experiment.add_subparsers(dest="study_name", required=True)
 
-        create = _subparser(experiment_sub, "create", help="Create an experiment")
-        create_sub = create.add_subparsers(dest="model_name", required=True)
+        for name, spec in self.registry.items():
+            study_parser = _subparser(experiment_sub, name, help=spec.description)
+            study_cmd_sub = study_parser.add_subparsers(
+                dest="experiment_command", required=True
+            )
 
-        for model_name, spec in self.registry.items():
-            p = _subparser(create_sub, model_name, help=spec.description)
-            p.add_argument("--name", help="Experiment name")
-            p.add_argument("--notes", help="Experiment notes")
-            _add_config_flags(p, spec.cfg, exclude=HIDDEN_CONFIG_FIELDS)
-            p.set_defaults(
+            create = _subparser(study_cmd_sub, "create", help="Create an experiment")
+            create.add_argument("--name", help="Experiment name")
+            create.add_argument("--notes", help="Experiment notes")
+            _add_config_flags(create, spec.cfg, exclude=HIDDEN_CONFIG_FIELDS)
+            create.set_defaults(
                 func=partial(self.experiment_create, cfg_cls=spec.cfg),
             )
 
-    def _add_run(self, sub: argparse._SubParsersAction, argv: list[str]) -> None:
+            lst = _subparser(study_cmd_sub, "list", help="List experiments")
+            lst.set_defaults(func=self.experiment_list)
+
+    def _add_run(self, sub: argparse._SubParsersAction) -> None:
         run = _subparser(sub, "run", help="Create, inspect, and sync runs")
-        run_sub = run.add_subparsers(dest="run_command", required=True)
+        run_sub = run.add_subparsers(dest="study_name", required=True)
 
-        create_cfg = _resolve_dynamic_cfg(
-            self.ctx, self.registry, argv, "create", "create"
-        )
-        chat_cfg = _resolve_dynamic_cfg(self.ctx, self.registry, argv, "chat", "chat")
+        for name, spec in self.registry.items():
+            study_parser = _subparser(run_sub, name, help=spec.description)
+            study_cmd_sub = study_parser.add_subparsers(
+                dest="run_command", required=True
+            )
 
-        p = _subparser(run_sub, "create", help="Create a run from an experiment")
-        p.add_argument("experiment_path", help="Experiment directory")
-        p.add_argument("--notes", default="", help="Run notes")
-        if create_cfg is not None:
-            _add_config_flags(p, create_cfg, exclude=HIDDEN_CONFIG_FIELDS)
-        p.set_defaults(func=self.run_create)
+            self._add_run_create(study_cmd_sub, spec)
+            self._add_run_list(study_cmd_sub)
+            self._add_run_start(study_cmd_sub)
+            self._add_run_chat(study_cmd_sub, spec)
+            self._add_run_push(study_cmd_sub)
+            self._add_run_pull(study_cmd_sub)
 
+    def _add_run_create(self, run_sub: argparse._SubParsersAction, spec: Study) -> None:
+        create = _subparser(run_sub, "create", help="Create a run from an experiment")
+        create.add_argument("experiment", help="Experiment name")
+        create.add_argument("--notes", default="", help="Run notes")
+        _add_config_flags(create, spec.cfg, exclude=HIDDEN_CONFIG_FIELDS)
+        create.set_defaults(func=partial(self.run_create, cfg_cls=spec.cfg))
+
+    def _add_run_list(self, run_sub: argparse._SubParsersAction) -> None:
         p = _subparser(run_sub, "list", help="List runs for an experiment")
-        p.add_argument("experiment_path", help="Experiment directory")
+        p.add_argument("experiment", help="Experiment name")
         p.set_defaults(func=self.run_list)
 
+    def _add_run_start(self, run_sub: argparse._SubParsersAction) -> None:
         p = _subparser(run_sub, "start", help="Start training for a run")
-        p.add_argument("path", help="Run directory")
+        p.add_argument("experiment", help="Experiment name")
+        p.add_argument("run_id", help="Run ID")
         p.set_defaults(func=self.run_start)
 
+    def _add_run_chat(self, run_sub: argparse._SubParsersAction, spec: Study) -> None:
+        chat_cmd = spec.commands.get("chat")
+        if chat_cmd is None:
+            return
         p = _subparser(run_sub, "chat", help="Chat with a run checkpoint")
-        p.add_argument("path", help="Run directory")
-        if chat_cfg is not None:
-            _add_config_flags(p, chat_cfg, exclude=HIDDEN_CONFIG_FIELDS)
-        p.set_defaults(func=self.run_chat)
+        p.add_argument("experiment", help="Experiment name")
+        p.add_argument("run_id", help="Run ID")
+        _add_config_flags(p, chat_cmd.cfg, exclude=HIDDEN_CONFIG_FIELDS)
+        p.set_defaults(func=partial(self.run_chat, command=chat_cmd))
 
+    def _add_run_push(self, run_sub: argparse._SubParsersAction) -> None:
         p = _subparser(run_sub, "push", help="Upload run checkpoints to Hugging Face")
-        p.add_argument("path", help="Run directory")
+        p.add_argument("experiment", help="Experiment name")
+        p.add_argument("run_id", help="Run ID")
         p.set_defaults(func=self.run_push)
 
+    def _add_run_pull(self, run_sub: argparse._SubParsersAction) -> None:
         p = _subparser(
             run_sub, "pull", help="Download run checkpoints from Hugging Face"
         )
-        p.add_argument("path", help="Run directory")
+        p.add_argument("experiment", help="Experiment name")
+        p.add_argument("run_id", help="Run ID")
         p.set_defaults(func=self.run_pull)
 
 
 def parse_args(
     ctx: Context,
-    registry: dict[str, Model],
+    registry: dict[str, Study],
     argv: list[str] | None = None,
     *,
     store: storage.RunStorage | None = None,
@@ -325,7 +333,7 @@ def parse_args(
     if store is None:
         store = storage.RunStorage(ctx, storage.HfApiTransport(ctx))
     app = App(ctx, registry, store)
-    parser = app.build_parser(args)
+    parser = app.build_parser()
     return parser.parse_args(args)
 
 
@@ -334,7 +342,7 @@ def main(argv: list[str] | None = None) -> int:
     ctx.load_dotenv()
     console = Console()
     try:
-        ns = parse_args(ctx, MODELS, argv)
+        ns = parse_args(ctx, STUDIES, argv)
         ns.func(ns)
     except SystemExit as exc:
         return exc.code if isinstance(exc.code, int) else (1 if exc.code else 0)

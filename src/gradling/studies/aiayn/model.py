@@ -2,8 +2,8 @@ import jax
 from flax import nnx
 from jax import numpy as jnp
 
-from gradling.models.aiayn.config import AIAYNConfig
 from gradling.modules import LayerNorm, MultiHeadAttention
+from gradling.studies.aiayn.config import AIAYNConfig
 
 
 class FeedForward(nnx.Module):

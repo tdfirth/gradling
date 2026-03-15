@@ -8,7 +8,7 @@ import pytest
 from gradling import cli, storage
 from gradling.config import Config
 from gradling.context import Context
-from gradling.models import Command, Model
+from gradling.studies import Command, Study
 
 
 @dataclass
@@ -35,8 +35,8 @@ def _noop_chat(_: ChatConfigFixture) -> None:
     return None
 
 
-TEST_REGISTRY: dict[str, Model] = {
-    "test_model": Model(
+TEST_REGISTRY: dict[str, Study] = {
+    "test_model": Study(
         cfg=CliConfigFixture,
         commands={
             "train": Command(cfg=CliConfigFixture, fn=_noop_train),
@@ -63,7 +63,7 @@ class FakeTransport:
 
 def _run(
     ctx: Context,
-    registry: dict[str, Model],
+    registry: dict[str, Study],
     argv: list[str],
     *,
     store: storage.RunStorage | None = None,
@@ -78,13 +78,13 @@ def _run(
     return 0
 
 
-def _write_experiment(path: Path, *, model: str = "test_model") -> None:
+def _write_experiment(path: Path, *, study: str = "test_model") -> None:
     path.mkdir(parents=True)
     (path / "experiment.toml").write_text(
         "\n".join(
             [
                 "[experiment]",
-                f'model = "{model}"',
+                f'study = "{study}"',
                 'name = "baseline"',
                 'notes = ""',
                 "",
@@ -101,13 +101,13 @@ def _write_experiment(path: Path, *, model: str = "test_model") -> None:
     )
 
 
-def _write_run(path: Path) -> None:
+def _write_run(path: Path, *, run_id: str = "0001", run_path: str = "") -> None:
     path.mkdir(parents=True)
     (path / "run.toml").write_text(
         "\n".join(
             [
                 "[run]",
-                'id = "0001"',
+                f'id = "{run_id}"',
                 'notes = ""',
                 "",
                 "[config]",
@@ -116,15 +116,15 @@ def _write_run(path: Path) -> None:
                 'title = "base"',
                 "enabled = false",
                 'experiment_name = "baseline"',
-                'run_path = "experiments/test_model/baseline/runs/0001"',
+                f'run_path = "{run_path}"',
             ]
         )
         + "\n"
     )
 
 
-def test_models_list(capsys):
-    code = _run(Context(), TEST_REGISTRY, ["models", "list"])
+def test_study_list(capsys):
+    code = _run(Context(), TEST_REGISTRY, ["study", "list"])
     out = capsys.readouterr().out
     assert code == 0
     assert "test_model" in out
@@ -132,7 +132,7 @@ def test_models_list(capsys):
 
 def test_experiment_create_help_shows_config_fields(capsys):
     code = _run(
-        Context(), TEST_REGISTRY, ["experiment", "create", "test_model", "--help"]
+        Context(), TEST_REGISTRY, ["experiment", "test_model", "create", "--help"]
     )
     out = capsys.readouterr().out
     assert code == 0
@@ -144,15 +144,25 @@ def test_experiment_create_help_shows_config_fields(capsys):
     assert "--notes" in out
 
 
-def test_run_create_help_shows_model_config_fields(tmp_path, capsys):
+def test_experiment_list(tmp_path, capsys):
     experiment_path = tmp_path / "experiments" / "test_model" / "baseline"
     _write_experiment(experiment_path)
-    ctx = Context(root=tmp_path)
 
     code = _run(
-        ctx,
+        Context(root=tmp_path),
         TEST_REGISTRY,
-        ["run", "create", str(experiment_path), "--help"],
+        ["experiment", "test_model", "list"],
+    )
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "baseline" in out
+
+
+def test_run_create_help_shows_model_config_fields(capsys):
+    code = _run(
+        Context(),
+        TEST_REGISTRY,
+        ["run", "test_model", "create", "--help"],
     )
     out = capsys.readouterr().out
     assert code == 0
@@ -163,17 +173,11 @@ def test_run_create_help_shows_model_config_fields(tmp_path, capsys):
     assert "--notes" in out
 
 
-def test_run_chat_help_shows_chat_config_fields(tmp_path, capsys):
-    experiment_path = tmp_path / "experiments" / "test_model" / "baseline"
-    run_path = experiment_path / "runs" / "0001"
-    _write_experiment(experiment_path)
-    _write_run(run_path)
-    ctx = Context(root=tmp_path)
-
+def test_run_chat_help_shows_chat_config_fields(capsys):
     code = _run(
-        ctx,
+        Context(),
         TEST_REGISTRY,
-        ["run", "chat", str(run_path), "--help"],
+        ["run", "test_model", "chat", "--help"],
     )
     out = capsys.readouterr().out
     assert code == 0
@@ -187,7 +191,7 @@ def test_run_start_dispatches_to_train_command(tmp_path):
         captured.append(cfg)
 
     registry = {
-        "test_model": Model(
+        "test_model": Study(
             cfg=CliConfigFixture,
             commands={
                 "train": Command(cfg=CliConfigFixture, fn=train),
@@ -198,9 +202,13 @@ def test_run_start_dispatches_to_train_command(tmp_path):
     experiment_path = tmp_path / "experiments" / "test_model" / "baseline"
     run_path = experiment_path / "runs" / "0001"
     _write_experiment(experiment_path)
-    _write_run(run_path)
+    _write_run(run_path, run_path="experiments/test_model/baseline/runs/0001")
 
-    code = _run(Context(root=tmp_path), registry, ["run", "start", str(run_path)])
+    code = _run(
+        Context(root=tmp_path),
+        registry,
+        ["run", "test_model", "start", "baseline", "0001"],
+    )
 
     assert code == 0
     assert len(captured) == 1
@@ -214,7 +222,7 @@ def test_run_chat_dispatches_to_chat_command(tmp_path):
         captured.append(cfg)
 
     registry = {
-        "test_model": Model(
+        "test_model": Study(
             cfg=CliConfigFixture,
             commands={
                 "train": Command(cfg=CliConfigFixture, fn=_noop_train),
@@ -225,12 +233,12 @@ def test_run_chat_dispatches_to_chat_command(tmp_path):
     experiment_path = tmp_path / "experiments" / "test_model" / "baseline"
     run_path = experiment_path / "runs" / "0001"
     _write_experiment(experiment_path)
-    _write_run(run_path)
+    _write_run(run_path, run_path="experiments/test_model/baseline/runs/0001")
 
     code = _run(
         Context(root=tmp_path),
         registry,
-        ["run", "chat", str(run_path), "--max-tokens", "99"],
+        ["run", "test_model", "chat", "baseline", "0001", "--max-tokens", "99"],
     )
 
     assert code == 0
@@ -248,10 +256,15 @@ def test_push_invokes_storage_handler(tmp_path):
     transport = FakeTransport()
     ctx = Context(root=tmp_path)
     store = storage.RunStorage(ctx, transport)
-    run_path = Path("artifacts/run-1")
+    run_path = Path("experiments/test_model/baseline/runs/0001")
     (tmp_path / run_path / "checkpoints").mkdir(parents=True)
 
-    code = _run(ctx, TEST_REGISTRY, ["run", "push", str(run_path)], store=store)
+    code = _run(
+        ctx,
+        TEST_REGISTRY,
+        ["run", "test_model", "push", "baseline", "0001"],
+        store=store,
+    )
 
     assert code == 0
     assert transport.push_calls == [(run_path / "checkpoints", tmp_path)]
@@ -261,9 +274,14 @@ def test_pull_invokes_storage_handler(tmp_path):
     transport = FakeTransport()
     ctx = Context(root=tmp_path)
     store = storage.RunStorage(ctx, transport)
-    run_path = Path("artifacts/run-1")
+    run_path = Path("experiments/test_model/baseline/runs/0001")
 
-    code = _run(ctx, TEST_REGISTRY, ["run", "pull", str(run_path)], store=store)
+    code = _run(
+        ctx,
+        TEST_REGISTRY,
+        ["run", "test_model", "pull", "baseline", "0001"],
+        store=store,
+    )
 
     assert code == 0
     assert transport.pull_calls == [(run_path / "checkpoints", tmp_path)]
@@ -277,9 +295,9 @@ def test_main_loads_dotenv(monkeypatch):
         called = True
 
     monkeypatch.setattr(cli.Context, "load_dotenv", fake_load_dotenv)
-    monkeypatch.setattr(cli, "MODELS", TEST_REGISTRY)
+    monkeypatch.setattr(cli, "STUDIES", TEST_REGISTRY)
 
-    code = cli.main(["models", "list"])
+    code = cli.main(["study", "list"])
 
     assert code == 0
     assert called is True

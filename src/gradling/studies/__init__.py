@@ -3,7 +3,7 @@ from collections.abc import Callable
 from pydantic import BaseModel
 
 from gradling.config import Config
-from gradling.models import aiayn, mlp
+from gradling.studies import aiayn, mlp
 
 
 class Command[Cfg: Config](BaseModel):
@@ -11,19 +11,19 @@ class Command[Cfg: Config](BaseModel):
     fn: Callable[[Cfg], None]
 
 
-class Model[Cfg: Config](BaseModel):
+class Study[Cfg: Config](BaseModel):
     cfg: type[Cfg]
     commands: dict[str, Command]
     description: str = ""
 
 
-MODELS: dict[str, Model] = {
-    "mlp": Model(
+STUDIES: dict[str, Study] = {
+    "mlp": Study(
         cfg=mlp.MLPConfig,
         description="A simple MLP in vanilla jax",
         commands={"train": Command(cfg=mlp.MLPConfig, fn=mlp.train)},
     ),
-    "aiayn": Model(
+    "aiayn": Study(
         cfg=aiayn.AIAYNConfig,
         description="Decoder only transformer based on Attention is All You Need",
         commands={
@@ -37,6 +37,6 @@ MODELS: dict[str, Model] = {
 
 __all__ = [
     "Command",
-    "Model",
-    "MODELS",
+    "Study",
+    "STUDIES",
 ]
