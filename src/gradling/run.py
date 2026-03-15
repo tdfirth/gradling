@@ -1,28 +1,20 @@
 from __future__ import annotations
 
-from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Protocol, Self, cast
+from typing import Any, Self, cast
 
 import orbax.checkpoint as ocp
 import tomlkit
 from flax import nnx
 
+from gradling.config import Config
 from gradling.context import Context
-from gradling.metrics import Metrics
+from gradling.metrics import Metrics, RunIdentity, SinkFactory, log_only
 
 RUNS = Path("runs")
 CHECKPOINTS = Path("checkpoints")
 EXPERIMENT_FILE = "experiment.toml"
 RUN_FILE = "run.toml"
-
-
-class MetricSink(Protocol):
-    def track(self, metrics: dict[str, Any], step: int) -> None: ...
-    def close(self) -> None: ...
-
-
-MetricsFactory = Callable[..., MetricSink]
 
 
 def _experiment_file(path: Path) -> Path:
@@ -113,13 +105,7 @@ class Experiment:
             cfg=cfg,
         )
 
-    def create_run(
-        self,
-        notes: str,
-        cfg: dict[str, Any],
-        *,
-        metrics_factory: MetricsFactory = Metrics,
-    ) -> Run:
+    def create_run(self, notes: str, cfg: dict[str, Any]) -> Path:
         path = _next_run_dir(self.path)
         path.mkdir(parents=True, exist_ok=True)
 
@@ -131,41 +117,46 @@ class Experiment:
                 {
                     "run": {
                         "id": path.name,
+                        "study": self.study,
+                        "experiment": self.name,
                         "notes": notes,
                     },
                     "config": run_cfg,
                 }
             )
         )
-        return Run.from_path(self.ctx, path, metrics_factory=metrics_factory)
+        return path
 
-    def list_runs(self, *, metrics_factory: MetricsFactory = Metrics) -> list[Run]:
+    def list_runs(self) -> list[Path]:
         if not self.runs.exists():
             return []
         runs = [path for path in self.runs.iterdir() if path.is_dir()]
-        return [
-            Run.from_path(self.ctx, path, metrics_factory=metrics_factory)
-            for path in sorted(runs, key=lambda path: path.name)
-        ]
+        return sorted(runs, key=lambda path: path.name)
 
 
-class Run:
+class Run[Cfg: Config]:
     def __init__(
         self,
         ctx: Context,
         path: Path,
-        cfg: dict[str, Any],
-        metrics: MetricSink,
+        cfg: Cfg,
+        metrics: Metrics,
         *,
-        run_id: str = "",
-        notes: str = "",
+        identity: RunIdentity | None = None,
+        raw_cfg: dict[str, Any] | None = None,
     ) -> None:
         self.ctx = ctx
         self.path = path
         self.cfg = cfg
+        self.raw_cfg = raw_cfg or {}
         self.metrics = metrics
-        self.id = run_id or path.name
-        self.notes = notes
+        self.identity = identity or RunIdentity(
+            study="",
+            experiment="",
+            run_id=path.name,
+        )
+        self.id = self.identity.run_id
+        self.notes = self.identity.notes
         self.checkpoints = path / CHECKPOINTS
         self.checkpoints.mkdir(parents=True, exist_ok=True)
         self.checkpointer = ocp.StandardCheckpointer()
@@ -176,9 +167,10 @@ class Run:
         ctx: Context,
         study: str,
         experiment: str,
+        cfg_cls: type[Cfg],
         cfg: dict[str, Any],
         *,
-        metrics_factory: MetricsFactory = Metrics,
+        sink_factory: SinkFactory = log_only,
     ) -> Self:
         experiment_path = ctx.experiments / study / experiment
         spec = (
@@ -186,12 +178,12 @@ class Run:
             if experiment_path.exists()
             else Experiment.create(ctx, study, experiment, "", cfg)
         )
-        run = spec.create_run("", cfg, metrics_factory=metrics_factory)
+        path = spec.create_run("", cfg)
         return cls.from_path(
             ctx,
-            run.path,
-            metrics_factory=metrics_factory,
-            enable_wandb=True,
+            path,
+            cfg_cls=cfg_cls,
+            sink_factory=sink_factory,
         )
 
     @classmethod
@@ -200,20 +192,30 @@ class Run:
         ctx: Context,
         path: Path,
         *,
-        metrics_factory: MetricsFactory = Metrics,
-        enable_wandb: bool = False,
+        cfg_cls: type[Cfg],
+        overrides: dict[str, Any] | None = None,
+        sink_factory: SinkFactory = log_only,
     ) -> Self:
         path = ctx.resolve_path(path)
         doc = tomlkit.parse(_run_file(path).read_text()).unwrap()
-        run = doc["run"]
-        cfg = doc["config"]
+        run_meta = doc["run"]
+        raw_cfg = doc["config"]
+        if overrides:
+            raw_cfg.update(overrides)
+        cfg = cfg_cls.from_dict(raw_cfg)
+        identity = RunIdentity(
+            study=cast(str, run_meta.get("study", "")),
+            experiment=cast(str, run_meta.get("experiment", "")),
+            run_id=cast(str, run_meta.get("id", path.name)),
+            notes=cast(str, run_meta.get("notes", "")),
+        )
         return cls(
             ctx,
             path,
             cfg,
-            metrics_factory(cfg, enable_wandb=enable_wandb),
-            run_id=cast(str, run.get("id", path.name)),
-            notes=cast(str, run.get("notes", "")),
+            Metrics(sink_factory(identity, raw_cfg)),
+            identity=identity,
+            raw_cfg=raw_cfg,
         )
 
     def checkpoint(self, label: str, model: nnx.Module):

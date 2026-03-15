@@ -10,7 +10,8 @@ def runtime_field[T](default: T, doc: str = "") -> T:
 class Config:
     @classmethod
     def from_dict(cls, d: dict):
-        return cls(**d)
+        valid = {k: v for k, v in d.items() if k in cls.field_names()}
+        return cls(**valid)
 
     def to_dict(self) -> dict:
         return asdict(self)

@@ -17,6 +17,7 @@ from gradling import run as runlib
 from gradling import storage
 from gradling.config import Config
 from gradling.context import Context
+from gradling.metrics import SinkFactory, log_only
 from gradling.studies import STUDIES, Command, Study
 
 log = logging.getLogger(__name__)
@@ -107,7 +108,7 @@ def _experiments_table(
 
 
 def _runs_table(
-    ctx: Context, experiment: runlib.Experiment, runs: list[runlib.Run]
+    ctx: Context, experiment: runlib.Experiment, run_paths: list[Path]
 ) -> Table:
     table = Table(
         title=f"Runs for {ctx.display_path(experiment.path)}",
@@ -115,9 +116,8 @@ def _runs_table(
     )
     table.add_column("Run", style="bold cyan")
     table.add_column("Path")
-    table.add_column("Notes", style="dim")
-    for run in runs:
-        table.add_row(run.id, ctx.display_path(run.path), run.notes.strip() or "-")
+    for run_path in run_paths:
+        table.add_row(run_path.name, ctx.display_path(run_path))
     return table
 
 
@@ -153,9 +153,24 @@ class App:
             self.ctx, self._experiment_path(study_name, experiment)
         )
 
-    def _resolve_run(self, study_name: str, experiment: str, run_id: str) -> runlib.Run:
+    def _resolve_run(
+        self,
+        study_name: str,
+        experiment: str,
+        run_id: str,
+        *,
+        cfg_cls: type[Config],
+        overrides: dict[str, Any] | None = None,
+        sink_factory: SinkFactory = log_only,
+    ) -> runlib.Run:
         path = self._experiment_path(study_name, experiment) / "runs" / run_id
-        return runlib.Run.from_path(self.ctx, path)
+        return runlib.Run.from_path(
+            self.ctx,
+            path,
+            cfg_cls=cfg_cls,
+            overrides=overrides,
+            sink_factory=sink_factory,
+        )
 
     def study_list(self, _ns: argparse.Namespace) -> None:
         self.console.print(_studies_table(self.registry))
@@ -187,8 +202,8 @@ class App:
         experiment = self._resolve_experiment(ns.study_name, ns.experiment)
         overrides = _config_overrides(ns, cfg_cls)
         resolved_cfg = cfg_cls(**{**experiment.cfg, **overrides}).to_dict()
-        run = experiment.create_run(ns.notes or "", resolved_cfg)
-        self.console.print(self.ctx.display_path(run.path))
+        path = experiment.create_run(ns.notes or "", resolved_cfg)
+        self.console.print(self.ctx.display_path(path))
 
     def run_list(self, ns: argparse.Namespace) -> None:
         experiment = self._resolve_experiment(ns.study_name, ns.experiment)
@@ -199,18 +214,26 @@ class App:
         command = spec.commands.get("train")
         if command is None:
             raise RuntimeError(f"Study {ns.study_name!r} has no 'train' command.")
-        run = self._resolve_run(ns.study_name, ns.experiment, ns.run_id)
-        cfg = command.cfg(**run.cfg)
-        command.fn(cfg)
+        run = self._resolve_run(
+            ns.study_name,
+            ns.experiment,
+            ns.run_id,
+            cfg_cls=command.cfg,
+            sink_factory=command.sinks,
+        )
+        command.fn(run)
 
     def run_chat(self, ns: argparse.Namespace, command: Command) -> None:
-        run = self._resolve_run(ns.study_name, ns.experiment, ns.run_id)
         overrides = _config_overrides(ns, command.cfg)
-        cfg = command.cfg(
-            run_path=run.cfg.get("run_path", self.ctx.display_path(run.path)),
-            **overrides,
+        run = self._resolve_run(
+            ns.study_name,
+            ns.experiment,
+            ns.run_id,
+            cfg_cls=command.cfg,
+            overrides=overrides,
+            sink_factory=command.sinks,
         )
-        command.fn(cfg)
+        command.fn(run)
 
     def run_push(self, ns: argparse.Namespace) -> None:
         self.store.push(self._run_rel_path(ns.study_name, ns.experiment, ns.run_id))

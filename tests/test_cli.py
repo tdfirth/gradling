@@ -8,6 +8,7 @@ import pytest
 from gradling import cli, storage
 from gradling.config import Config
 from gradling.context import Context
+from gradling.run import Run
 from gradling.studies import Command, Study
 
 
@@ -27,11 +28,11 @@ class ChatConfigFixture(Config):
     max_tokens: int = 32
 
 
-def _noop_train(_: CliConfigFixture) -> None:
+def _noop_train(_: Run[CliConfigFixture]) -> None:
     return None
 
 
-def _noop_chat(_: ChatConfigFixture) -> None:
+def _noop_chat(_: Run[ChatConfigFixture]) -> None:
     return None
 
 
@@ -101,13 +102,22 @@ def _write_experiment(path: Path, *, study: str = "test_model") -> None:
     )
 
 
-def _write_run(path: Path, *, run_id: str = "0001", run_path: str = "") -> None:
+def _write_run(
+    path: Path,
+    *,
+    run_id: str = "0001",
+    run_path: str = "",
+    study: str = "test_model",
+    experiment: str = "baseline",
+) -> None:
     path.mkdir(parents=True)
     (path / "run.toml").write_text(
         "\n".join(
             [
                 "[run]",
                 f'id = "{run_id}"',
+                f'study = "{study}"',
+                f'experiment = "{experiment}"',
                 'notes = ""',
                 "",
                 "[config]",
@@ -185,10 +195,10 @@ def test_run_chat_help_shows_chat_config_fields(capsys):
 
 
 def test_run_start_dispatches_to_train_command(tmp_path):
-    captured: list[CliConfigFixture] = []
+    captured: list[Run[CliConfigFixture]] = []
 
-    def train(cfg: CliConfigFixture) -> None:
-        captured.append(cfg)
+    def train(run: Run[CliConfigFixture]) -> None:
+        captured.append(run)
 
     registry = {
         "test_model": Study(
@@ -212,14 +222,14 @@ def test_run_start_dispatches_to_train_command(tmp_path):
 
     assert code == 0
     assert len(captured) == 1
-    assert captured[0].run_path == "experiments/test_model/baseline/runs/0001"
+    assert captured[0].cfg.run_path == "experiments/test_model/baseline/runs/0001"
 
 
 def test_run_chat_dispatches_to_chat_command(tmp_path):
-    captured: list[ChatConfigFixture] = []
+    captured: list[Run[ChatConfigFixture]] = []
 
-    def chat(cfg: ChatConfigFixture) -> None:
-        captured.append(cfg)
+    def chat(run: Run[ChatConfigFixture]) -> None:
+        captured.append(run)
 
     registry = {
         "test_model": Study(
@@ -243,8 +253,8 @@ def test_run_chat_dispatches_to_chat_command(tmp_path):
 
     assert code == 0
     assert len(captured) == 1
-    assert captured[0].run_path == "experiments/test_model/baseline/runs/0001"
-    assert captured[0].max_tokens == 99
+    assert captured[0].cfg.run_path == "experiments/test_model/baseline/runs/0001"
+    assert captured[0].cfg.max_tokens == 99
 
 
 def test_unknown_command():

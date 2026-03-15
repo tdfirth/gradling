@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import re
 from itertools import islice
-from pathlib import Path
 from time import perf_counter
 
 import jax
@@ -13,7 +12,6 @@ from jax import numpy as jnp
 
 import wandb
 from gradling import logger
-from gradling.context import Context
 from gradling.data import create_dataset, loader, random_iterator
 from gradling.run import Run
 from gradling.studies.aiayn.config import AIAYNConfig
@@ -170,8 +168,8 @@ def _run_training_loop(
     run.checkpoint("final", model)
 
 
-def train(cfg: AIAYNConfig) -> None:
-    """Train a GPT2."""
+def train(run: Run[AIAYNConfig]) -> None:
+    cfg = run.cfg
 
     rngs = nnx.Rngs(cfg.seed)
 
@@ -207,13 +205,6 @@ def train(cfg: AIAYNConfig) -> None:
     if cfg.dry_run:
         log.info("Dry run, exiting before training")
         return
-
-    if not cfg.run_path:
-        msg = "run_path is required."
-        raise ValueError(msg)
-
-    ctx = Context()
-    run = Run.from_path(ctx, Path(cfg.run_path))
 
     _run_training_loop(
         run,

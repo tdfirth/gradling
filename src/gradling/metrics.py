@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import os
-from datetime import datetime
-from typing import Any, Protocol, cast
+from collections.abc import Callable
+from dataclasses import dataclass
+from typing import Any, Protocol
 
 import jax
 
@@ -12,9 +13,20 @@ from gradling.env import load_dotenv
 log = logger.get(__name__)
 
 
+@dataclass(frozen=True)
+class RunIdentity:
+    study: str
+    experiment: str
+    run_id: str
+    notes: str = ""
+
+
 class MetricSink(Protocol):
     def track(self, metrics: dict[str, Any], step: int) -> None: ...
     def close(self) -> None: ...
+
+
+SinkFactory = Callable[["RunIdentity", dict[str, Any]], list[MetricSink]]
 
 
 def is_loggable(x):
@@ -32,10 +44,18 @@ class LogSink:
 
 
 class WandbSink:
-    def __init__(self, config: dict[str, Any]) -> None:
+    def __init__(self, identity: RunIdentity, config: dict[str, Any]) -> None:
         import wandb
 
-        self.run = wandb.init(entity="tdfirth", project="Gradling", config=config)
+        self.run = wandb.init(
+            entity="tdfirth",
+            project="Gradling",
+            config=config,
+            name=f"{identity.study}/{identity.experiment}/{identity.run_id}",
+            group=f"{identity.study}/{identity.experiment}",
+            tags=[identity.study, identity.experiment],
+            notes=identity.notes,
+        )
 
     def track(self, metrics: dict[str, Any], step: int) -> None:
         self.run.log(metrics, step=step)
@@ -48,25 +68,24 @@ def _load_dotenv() -> None:
     load_dotenv()
 
 
-class Metrics:
-    def __init__(self, config: dict[str, Any], *, enable_wandb: bool = True) -> None:
-        self.sinks: list[MetricSink] = [LogSink()]
-        self._wandb_sink: WandbSink | None = None
-        if enable_wandb:
-            _load_dotenv()
-            if os.environ.get("WANDB_API_KEY"):
-                try:
-                    self._wandb_sink = WandbSink(config)
-                    self.sinks.append(self._wandb_sink)
-                except Exception:
-                    log.warning("Failed to initialize wandb sink", exc_info=True)
+def log_only(_identity: RunIdentity, _config: dict[str, Any]) -> list[MetricSink]:
+    return [LogSink()]
 
-    @property
-    def name(self) -> str:
-        if self._wandb_sink is not None:
-            return cast(str, self._wandb_sink.run.name)
-        fallback_name = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
-        return fallback_name
+
+def with_wandb(identity: RunIdentity, config: dict[str, Any]) -> list[MetricSink]:
+    sinks: list[MetricSink] = [LogSink()]
+    _load_dotenv()
+    if os.environ.get("WANDB_API_KEY"):
+        try:
+            sinks.append(WandbSink(identity, config))
+        except Exception:
+            log.warning("Failed to initialize wandb sink", exc_info=True)
+    return sinks
+
+
+class Metrics:
+    def __init__(self, sinks: list[MetricSink]) -> None:
+        self.sinks = list(sinks)
 
     def track(self, metrics: dict[str, Any], step: int) -> None:
         for sink in self.sinks:

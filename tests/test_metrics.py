@@ -4,7 +4,13 @@ from typing import Any
 from unittest.mock import patch
 
 from gradling.context import Context
-from gradling.metrics import LogSink, Metrics
+from gradling.metrics import (
+    LogSink,
+    Metrics,
+    RunIdentity,
+    log_only,
+    with_wandb,
+)
 from gradling.run import Run
 
 
@@ -18,6 +24,9 @@ class FakeSink:
 
     def close(self) -> None:
         self.closed = True
+
+
+FAKE_IDENTITY = RunIdentity(study="test", experiment="baseline", run_id="0001")
 
 
 class TestLogSink:
@@ -35,33 +44,40 @@ class TestLogSink:
 
 class TestMetrics:
     def test_track_fans_out_to_all_sinks(self):
-        m = Metrics.__new__(Metrics)
-        m.sinks = [FakeSink(), FakeSink()]
+        a, b = FakeSink(), FakeSink()
+        m = Metrics([a, b])
 
         m.track({"loss": 1.0}, step=5)
 
-        for sink in m.sinks:
+        for sink in (a, b):
             assert sink.tracked == [({"loss": 1.0}, 5)]
 
     def test_close_closes_all_sinks(self):
-        m = Metrics.__new__(Metrics)
-        m.sinks = [FakeSink(), FakeSink()]
+        a, b = FakeSink(), FakeSink()
+        m = Metrics([a, b])
 
         m.close()
 
-        for sink in m.sinks:
+        for sink in (a, b):
             assert sink.closed
 
 
 class TestRunTrack:
     def _make_run(self, tmp_path):
+        from dataclasses import dataclass
+
+        from gradling.config import Config
+
+        @dataclass
+        class EmptyConfig(Config):
+            pass
+
         path = tmp_path / "run"
         path.mkdir()
-        m = Metrics.__new__(Metrics)
-        m.sinks = [FakeSink()]
-        m._wandb_sink = None
-        run = Run(Context(root=tmp_path), path, {}, m)
-        return run, m.sinks[0]
+        fake = FakeSink()
+        m = Metrics([fake])
+        run = Run(Context(root=tmp_path), path, EmptyConfig(), m)
+        return run, fake
 
     def test_track_delegates_to_metrics(self, tmp_path):
         run, fake = self._make_run(tmp_path)
@@ -78,35 +94,28 @@ class TestRunTrack:
         assert fake.closed
 
 
-class TestMetricsName:
-    def test_fallback_name_is_timestamp(self):
-        m = Metrics.__new__(Metrics)
-        m._wandb_sink = None
-        name = m.name
-        parts = name.split("-")
-        assert len(parts) == 6
-
-    def test_fallback_name_is_stable(self):
-        m = Metrics.__new__(Metrics)
-        m._wandb_sink = None
-        assert m.name == m.name
+class TestLogOnly:
+    def test_returns_log_sink(self):
+        sinks = log_only(FAKE_IDENTITY, {})
+        assert len(sinks) == 1
+        assert isinstance(sinks[0], LogSink)
 
 
-class TestMetricsInit:
-    def test_always_includes_log_sink(self):
-        with (
-            patch("gradling.metrics._load_dotenv"),
-            patch.dict(os.environ, {}, clear=True),
-        ):
-            m = Metrics({})
-        assert any(isinstance(s, LogSink) for s in m.sinks)
-
-    def test_no_wandb_without_key(self):
+class TestWithWandb:
+    def test_returns_log_sink_without_key(self):
         env = {k: v for k, v in os.environ.items() if k != "WANDB_API_KEY"}
         with (
             patch("gradling.metrics._load_dotenv"),
             patch.dict(os.environ, env, clear=True),
         ):
-            m = Metrics({})
-        assert len(m.sinks) == 1
-        assert isinstance(m.sinks[0], LogSink)
+            sinks = with_wandb(FAKE_IDENTITY, {})
+        assert len(sinks) == 1
+        assert isinstance(sinks[0], LogSink)
+
+    def test_always_includes_log_sink(self):
+        with (
+            patch("gradling.metrics._load_dotenv"),
+            patch.dict(os.environ, {}, clear=True),
+        ):
+            sinks = with_wandb(FAKE_IDENTITY, {})
+        assert any(isinstance(s, LogSink) for s in sinks)

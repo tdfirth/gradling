@@ -1,24 +1,43 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from typing import Any
 
 import tomlkit
 
+from gradling.config import Config
 from gradling.context import Context
+from gradling.metrics import MetricSink, RunIdentity
 from gradling.run import CHECKPOINTS, RUNS, Experiment, Run
 
 
-class FakeMetrics:
-    def __init__(self, cfg: dict, *, enable_wandb: bool = True) -> None:
-        self.cfg = cfg
-        self.enable_wandb = enable_wandb
+@dataclass
+class FakeConfig(Config):
+    seed: int = 0
+    batch_size: int = 32
+    experiment_name: str = ""
+    run_path: str = ""
+    checkpoint_label: str = "final"
 
-    def track(self, metrics: dict, step: int) -> None:
-        return None
+
+class FakeSink:
+    def __init__(self) -> None:
+        self.tracked: list[tuple[dict[str, Any], int]] = []
+        self.closed = False
+
+    def track(self, metrics: dict[str, Any], step: int) -> None:
+        self.tracked.append((metrics, step))
 
     def close(self) -> None:
-        return None
+        self.closed = True
+
+
+def _fake_sink_factory(
+    _identity: RunIdentity, _config: dict[str, Any]
+) -> list[MetricSink]:
+    return [FakeSink()]
 
 
 def test_experiment_create_writes_toml():
@@ -64,22 +83,16 @@ def test_experiment_create_run_writes_run_toml_and_increments():
             },
         )
 
-        first = experiment.create_run(
-            "first run",
-            experiment.cfg,
-            metrics_factory=FakeMetrics,
-        )
-        second = experiment.create_run(
-            "second run",
-            experiment.cfg,
-            metrics_factory=FakeMetrics,
-        )
+        first = experiment.create_run("first run", experiment.cfg)
+        second = experiment.create_run("second run", experiment.cfg)
 
-        assert first.path == experiment.path / RUNS / "0001"
-        assert second.path == experiment.path / RUNS / "0002"
-        assert first.checkpoints == first.path / CHECKPOINTS
-        doc = tomlkit.parse((first.path / "run.toml").read_text()).unwrap()
+        assert first == experiment.path / RUNS / "0001"
+        assert second == experiment.path / RUNS / "0002"
+        assert (first / CHECKPOINTS).exists() is False
+        doc = tomlkit.parse((first / "run.toml").read_text()).unwrap()
         assert doc["run"]["id"] == "0001"
+        assert doc["run"]["study"] == "aiayn"
+        assert doc["run"]["experiment"] == "baseline"
         assert doc["run"]["notes"] == "first run"
         assert doc["config"]["run_path"] == "experiments/aiayn/baseline/runs/0001"
 
@@ -93,6 +106,8 @@ def test_run_from_path_loads_run_metadata():
                 [
                     "[run]",
                     'id = "0001"',
+                    'study = "aiayn"',
+                    'experiment = "baseline"',
                     'notes = "hello"',
                     "",
                     "[config]",
@@ -106,10 +121,15 @@ def test_run_from_path_loads_run_metadata():
         )
 
         run = Run.from_path(
-            Context(root=Path(tmp)), run_dir, metrics_factory=FakeMetrics
+            Context(root=Path(tmp)),
+            run_dir,
+            cfg_cls=FakeConfig,
+            sink_factory=_fake_sink_factory,
         )
 
         assert run.id == "0001"
         assert run.notes == "hello"
-        assert run.cfg["seed"] == 42
+        assert run.cfg.seed == 42
+        assert run.identity.study == "aiayn"
+        assert run.identity.experiment == "baseline"
         assert run.checkpoints == run_dir / CHECKPOINTS

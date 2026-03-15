@@ -2,7 +2,6 @@ import queue
 import sys
 import threading
 from dataclasses import dataclass
-from pathlib import Path
 from typing import NamedTuple, cast
 
 import jax
@@ -14,7 +13,6 @@ from transformers import AutoTokenizer, TokenizersBackend
 
 from gradling import logger
 from gradling.config import Config
-from gradling.context import Context
 from gradling.run import Run
 from gradling.studies.aiayn.model import AIAYN, AIAYNConfig
 
@@ -32,18 +30,11 @@ def right_pad(input: list[int], n: int, tok: int) -> list[int]:
     return input + ([tok] * pad_length)
 
 
-def chat(cfg: ChatConfig) -> None:
-    """Chat with a model"""
-    if not cfg.run_path:
-        msg = "run_path is required for sample command."
-        raise ValueError(msg)
-
-    log.info("Loading run")
-    ctx = Context()
-    run = Run.from_path(ctx, Path(cfg.run_path))
-    model_cfg = AIAYNConfig(**run.cfg)
+def chat(run: Run[ChatConfig]) -> None:
+    cfg = run.cfg
 
     log.info("Initializing model")
+    model_cfg = AIAYNConfig.from_dict(run.raw_cfg)
     tok = cast(TokenizersBackend, AutoTokenizer.from_pretrained("gpt2"))
     model = AIAYN(model_cfg, len(tok.vocab))
     model.eval()
