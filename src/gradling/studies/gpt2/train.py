@@ -38,6 +38,17 @@ def path_matches(path, regex):
     return result is not None
 
 
+def _accumulate_micro_batches(step_fn, init_carry, xs, ys, micro_batch_size):
+    n = xs.shape[0] // micro_batch_size
+    micro_xs = xs.reshape(n, micro_batch_size, -1)
+    micro_ys = ys.reshape(n, micro_batch_size, -1)
+
+    def body(i, carry):
+        return step_fn(carry, micro_xs[i], micro_ys[i])
+
+    return jax.lax.fori_loop(0, n, body, init_carry), n
+
+
 def _run_training_loop(
     run: Run,
     cfg: GPTConfig,
@@ -48,8 +59,6 @@ def _run_training_loop(
     train_data: np.memmap,
     dev_data: np.memmap,
 ) -> None:
-
-    accum_steps = cfg.batch_size // cfg.micro_batch_size
 
     @nnx.jit
     def _train_step(
@@ -69,22 +78,19 @@ def _run_training_loop(
 
         grad_fn = jax.value_and_grad(pure_loss)
 
-        micro_xs = xs.reshape(accum_steps, cfg.micro_batch_size, -1)
-        micro_ys = ys.reshape(accum_steps, cfg.micro_batch_size, -1)
-
-        def body(i, carry):
+        def train_body(carry, xs_i, ys_i):
             acc_grads, acc_loss = carry
-            loss, grads = grad_fn(params, micro_xs[i], micro_ys[i])
+            loss, grads = grad_fn(params, xs_i, ys_i)
             acc_grads = jax.tree.map(jnp.add, acc_grads, grads)
             return acc_grads, acc_loss + loss
 
         zero_grads = jax.tree.map(jnp.zeros_like, params)
-        acc_grads, acc_loss = jax.lax.fori_loop(
-            0, accum_steps, body, (zero_grads, jnp.array(0.0))
+        (acc_grads, acc_loss), n = _accumulate_micro_batches(
+            train_body, (zero_grads, jnp.array(0.0)), xs, ys, cfg.micro_batch_size
         )
 
-        acc_grads = jax.tree.map(lambda g: g / accum_steps, acc_grads)
-        acc_loss = acc_loss / accum_steps
+        acc_grads = jax.tree.map(lambda g: g / n, acc_grads)
+        acc_loss = acc_loss / n
 
         optimizer.update(model, acc_grads)
         metrics.update(loss=acc_loss)
@@ -97,9 +103,20 @@ def _run_training_loop(
         xs: jax.Array,
         ys: jax.Array,
     ):
-        logits = model(xs)
-        loss = optax.softmax_cross_entropy_with_integer_labels(logits, ys).mean()
-        metrics.update(loss=loss, logits=logits, labels=ys.astype(jnp.int32))
+        graphdef, params, rest = nnx.split(model, nnx.Param, ...)
+
+        def pure_loss(params, xs_i, ys_i):
+            m = nnx.merge(graphdef, params, rest)
+            logits = m(xs_i)
+            return optax.softmax_cross_entropy_with_integer_labels(logits, ys_i).mean()
+
+        def eval_body(acc_loss, xs_i, ys_i):
+            return acc_loss + pure_loss(params, xs_i, ys_i)
+
+        acc_loss, n = _accumulate_micro_batches(
+            eval_body, jnp.array(0.0), xs, ys, cfg.micro_batch_size
+        )
+        metrics.update(loss=acc_loss / n)
 
     nrng = np.random.Generator(np.random.PCG64(seed=cfg.seed))
     train_iterator = islice(
