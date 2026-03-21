@@ -2,6 +2,8 @@ import jax
 from flax import nnx
 from jax import numpy as jnp
 
+Initializer = nnx.initializers.Initializer
+
 
 class MultiHeadAttention(nnx.Module):
     """The rough plan is as follows:
@@ -22,21 +24,35 @@ class MultiHeadAttention(nnx.Module):
         num_heads: int,
         dropout: float,
         rngs: nnx.Rngs,
+        kernel_init: Initializer | None = None,
+        proj_kernel_init: Initializer | None = None,
     ):
         assert n_embd % num_heads == 0
         self.n_embd = n_embd
         self.num_heads = num_heads
         self.head_dim = n_embd // num_heads
-        self.attn = nnx.Linear(
+
+        attn_kwargs: dict = dict(
             in_features=n_embd,
             out_features=n_embd * 3,
             use_bias=False,
             rngs=rngs,
         )
+        if kernel_init is not None:
+            attn_kwargs["kernel_init"] = kernel_init
+
+        self.attn = nnx.Linear(**attn_kwargs)
         self.mask = nnx.Variable(
             jnp.tril(jnp.ones((ctx_len, ctx_len))).reshape(1, 1, ctx_len, ctx_len) == 0
         )
-        self.proj = nnx.Linear(in_features=n_embd, out_features=n_embd, rngs=rngs)
+
+        proj_kwargs: dict = dict(in_features=n_embd, out_features=n_embd, rngs=rngs)
+        if proj_kernel_init is not None:
+            proj_kwargs["kernel_init"] = proj_kernel_init
+        elif kernel_init is not None:
+            proj_kwargs["kernel_init"] = kernel_init
+
+        self.proj = nnx.Linear(**proj_kwargs)
         self.a_dropout = nnx.Dropout(dropout, rngs=rngs)
         self.r_dropout = nnx.Dropout(dropout, rngs=rngs)
 

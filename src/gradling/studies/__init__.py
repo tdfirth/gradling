@@ -6,7 +6,7 @@ from pydantic import BaseModel
 
 from gradling.config import Config
 from gradling.metrics import RunIdentity, SinkFactory, log_only, with_wandb
-from gradling.studies import aiayn, mlp
+from gradling.studies import aiayn, gpt2, mlp
 
 
 class Command[Cfg: Config](BaseModel):
@@ -39,9 +39,11 @@ STUDIES: dict[str, Study] = {
         },
     ),
     "gpt2": Study(
-        cfg=aiayn.AIAYNConfig,
+        cfg=gpt2.GPTConfig,
         description="Reimplementation of GPT-2 124M",
-        commands={},
+        commands={
+            "train": Command(cfg=gpt2.GPTConfig, fn=gpt2.train, sinks=with_wandb),
+        },
     ),
 }
 
