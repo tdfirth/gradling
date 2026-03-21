@@ -38,6 +38,11 @@ STUDIES: dict[str, Study] = {
             "chat": Command(cfg=aiayn.ChatConfig, fn=aiayn.chat),
         },
     ),
+    "gpt2": Study(
+        cfg=aiayn.AIAYNConfig,
+        description="Reimplementation of GPT-2 124M",
+        commands={},
+    ),
 }
 
 

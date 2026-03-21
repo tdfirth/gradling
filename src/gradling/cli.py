@@ -260,18 +260,18 @@ class App:
         self.store.pull(self._run_rel_path(ns.study_name, ns.experiment, ns.run_id))
 
     def dataset_prepare(self, ns: argparse.Namespace) -> None:
-        meta = datalib.prepare(self.ctx.root, ns.dataset_name)
-        d = datalib.dataset_dir(self.ctx.root, ns.dataset_name)
+        meta = datalib.prepare(self.ctx.root, ns.dataset_name, ns.config)
+        d = datalib.dataset_dir(self.ctx.root, ns.dataset_name, ns.config)
         self.console.print(self.ctx.display_path(d))
         self.console.print(
             f"train: {meta.train_tokens:,} tokens, dev: {meta.dev_tokens:,} tokens"
         )
 
     def dataset_push(self, ns: argparse.Namespace) -> None:
-        self.dataset_store.push(ns.dataset_name)
+        self.dataset_store.push(ns.dataset_name, ns.config)
 
     def dataset_pull(self, ns: argparse.Namespace) -> None:
-        self.dataset_store.pull(ns.dataset_name)
+        self.dataset_store.pull(ns.dataset_name, ns.config)
 
     def build_parser(self) -> argparse.ArgumentParser:
         parser = argparse.ArgumentParser(
@@ -394,17 +394,21 @@ class App:
         ds_sub = datasets.add_subparsers(dest="datasets_command", required=True)
 
         ds_name_help = "HF dataset name (e.g. roneneldan/TinyStories)"
+        config_help = "HF dataset config/subset (e.g. sample-10BT)"
 
         p = _subparser(ds_sub, "prepare", help="Download and tokenize a dataset")
         p.add_argument("dataset_name", help=ds_name_help)
+        p.add_argument("--config", default=None, help=config_help)
         p.set_defaults(func=self.dataset_prepare)
 
         p = _subparser(ds_sub, "push", help="Upload a prepared dataset to HF")
         p.add_argument("dataset_name", help=ds_name_help)
+        p.add_argument("--config", default=None, help=config_help)
         p.set_defaults(func=self.dataset_push)
 
         p = _subparser(ds_sub, "pull", help="Download a prepared dataset from HF")
         p.add_argument("dataset_name", help=ds_name_help)
+        p.add_argument("--config", default=None, help=config_help)
         p.set_defaults(func=self.dataset_pull)
 
     def _add_run_pull(self, run_sub: argparse._SubParsersAction) -> None:

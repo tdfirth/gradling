@@ -107,8 +107,8 @@ class RunStorage:
 
 
 class DatasetTransport(Protocol):
-    def push(self, dataset_name: str) -> None: ...
-    def pull(self, dataset_name: str) -> None: ...
+    def push(self, dataset_name: str, config: str | None = None) -> None: ...
+    def pull(self, dataset_name: str, config: str | None = None) -> None: ...
 
 
 class HfDatasetStorage:
@@ -122,10 +122,10 @@ class HfDatasetStorage:
             raise RuntimeError("Missing Hugging Face token. Set HF_TOKEN in .env.")
         return token
 
-    def push(self, dataset_name: str) -> None:
+    def push(self, dataset_name: str, config: str | None = None) -> None:
         from gradling.data import dataset_dir, read_meta
 
-        d = dataset_dir(self.ctx.root, dataset_name)
+        d = dataset_dir(self.ctx.root, dataset_name, config)
         meta = read_meta(d)
         token = self._token()
         api = HfApi(token=token)
@@ -143,10 +143,10 @@ class HfDatasetStorage:
             commit_message=f"gradling datasets push {dataset_name}",
         )
 
-    def pull(self, dataset_name: str) -> None:
+    def pull(self, dataset_name: str, config: str | None = None) -> None:
         from gradling.data import dataset_dir, read_meta
 
-        d = dataset_dir(self.ctx.root, dataset_name)
+        d = dataset_dir(self.ctx.root, dataset_name, config)
         meta = read_meta(d)
         log.info(
             "Downloading hf://%s to %s",

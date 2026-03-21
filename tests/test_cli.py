@@ -366,10 +366,10 @@ class FakeDatasetStorage:
         self.push_calls: list[str] = []
         self.pull_calls: list[str] = []
 
-    def push(self, dataset_name: str) -> None:
+    def push(self, dataset_name: str, config: str | None = None) -> None:
         self.push_calls.append(dataset_name)
 
-    def pull(self, dataset_name: str) -> None:
+    def pull(self, dataset_name: str, config: str | None = None) -> None:
         self.pull_calls.append(dataset_name)
 
 
