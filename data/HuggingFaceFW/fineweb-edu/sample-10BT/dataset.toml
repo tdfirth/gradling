@@ -1,0 +1,12 @@
+[dataset]
+source = "HuggingFaceFW/fineweb-edu"
+repo = "tdfirth/fineweb-edu-sample-10BT"
+tokenizer = "gpt2"
+dtype = "uint16"
+config = "sample-10BT"
+
+[dataset.train]
+tokens = 9853213826
+
+[dataset.dev]
+tokens = 100775507
