@@ -376,7 +376,7 @@ class FakeDatasetStorage:
 def test_datasets_prepare_dispatches(tmp_path, monkeypatch):
     prepared = []
 
-    def fake_prepare(root, dataset_name):
+    def fake_prepare(root, dataset_name, config=None):
         from gradling.data import DatasetMeta
 
         prepared.append(dataset_name)
