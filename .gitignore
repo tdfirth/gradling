@@ -21,3 +21,7 @@ experiments/**/runs/debug/
 wandb
 data/cache/
 data/**/*.npy
+jax_trace
+
+# Other
+.DS_Store

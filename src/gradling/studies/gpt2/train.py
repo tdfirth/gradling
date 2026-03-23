@@ -49,6 +49,21 @@ def _accumulate_micro_batches(step_fn, init_carry, xs, ys, micro_batch_size):
     return jax.lax.fori_loop(0, n, body, init_carry), n
 
 
+def display_memory_stats():
+    jax.effects_barrier()
+    print(jax.devices()[0].memory_stats())
+    arrays = jax.live_arrays()
+    for a in sorted(arrays, key=lambda x: x.size, reverse=True)[:20]:
+        print(f"{a.shape} {a.dtype} — {a.size * a.dtype.itemsize / 1e6:.1f} MB")
+    embs = [a for a in jax.live_arrays() if a.shape == (50257, 768)]
+    for i, a in enumerate(embs):
+        print(f"{i}: {a.unsafe_buffer_pointer()}")
+
+
+def cast(s, dtype):
+    return jax.tree_util.tree_map(lambda x: x.astype(dtype), s)
+
+
 def _run_training_loop(
     run: Run,
     cfg: GPTConfig,
@@ -72,7 +87,8 @@ def _run_training_loop(
         graphdef, params, rest = nnx.split(model, nnx.Param, ...)
 
         def pure_loss(params, xs_i, ys_i):
-            m = nnx.merge(graphdef, params, rest)
+            bf16_params = cast(params, jnp.bfloat16)
+            m = nnx.merge(graphdef, bf16_params, rest)
             logits = m(xs_i)
             return optax.softmax_cross_entropy_with_integer_labels(logits, ys_i).mean()
 
@@ -106,7 +122,8 @@ def _run_training_loop(
         graphdef, params, rest = nnx.split(model, nnx.Param, ...)
 
         def pure_loss(params, xs_i, ys_i):
-            m = nnx.merge(graphdef, params, rest)
+            bf16_params = cast(params, jnp.bfloat16)
+            m = nnx.merge(graphdef, bf16_params, rest)
             logits = m(xs_i)
             return optax.softmax_cross_entropy_with_integer_labels(logits, ys_i).mean()
 
@@ -135,9 +152,15 @@ def _run_training_loop(
 
     for step, batch in enumerate(loader(train_iterator)):
         xs, ys = batch
+        # if step == 3:
+        #    jax.profiler.start_trace(log_dir="/tmp/profile-data")
+        # if step == 5:
+        #    jax.profiler.stop_trace()
+
         should_evaluate = step % EVALUATE_ON_STEP == 0
         if not should_evaluate:
             _train_step(model, optimizer, metrics, rngs, xs, ys)
+
         else:
             log.info(f"Step {step}/{cfg.train_steps}")
 
@@ -174,7 +197,8 @@ def _run_training_loop(
                 f"weights/fnorm/{p}": jnp.linalg.norm(v) for p, v in attn_weights
             }
             attn_hists = {
-                f"weights/hist/{p}": wandb.Histogram(v) for p, v in attn_weights
+                f"weights/hist/{p}": wandb.Histogram(v.astype(jnp.float32))
+                for p, v in attn_weights
             }
 
             run.track(
@@ -240,9 +264,7 @@ def train(run: Run[GPTConfig]) -> None:
     )
 
     log.info("Initializing metrics")
-    metrics = nnx.MultiMetric(
-        accuracy=nnx.metrics.Accuracy(), loss=nnx.metrics.Average("loss")
-    )
+    metrics = nnx.MultiMetric(loss=nnx.metrics.Average("loss"))
 
     log.info("Preparing to train")
     if cfg.dry_run:

@@ -26,6 +26,7 @@ class MultiHeadAttention(nnx.Module):
         rngs: nnx.Rngs,
         kernel_init: Initializer | None = None,
         proj_kernel_init: Initializer | None = None,
+        use_flash_attention: bool = False,
     ):
         assert n_embd % num_heads == 0
         self.n_embd = n_embd
@@ -37,16 +38,24 @@ class MultiHeadAttention(nnx.Module):
             out_features=n_embd * 3,
             use_bias=False,
             rngs=rngs,
+            dtype=jnp.bfloat16,
         )
         if kernel_init is not None:
             attn_kwargs["kernel_init"] = kernel_init
 
         self.attn = nnx.Linear(**attn_kwargs)
-        self.mask = nnx.Variable(
-            jnp.tril(jnp.ones((ctx_len, ctx_len))).reshape(1, 1, ctx_len, ctx_len) == 0
-        )
+        if not use_flash_attention:
+            self.mask = nnx.Variable(
+                jnp.tril(jnp.ones((ctx_len, ctx_len))).reshape(1, 1, ctx_len, ctx_len)
+                == 0
+            )
 
-        proj_kwargs: dict = dict(in_features=n_embd, out_features=n_embd, rngs=rngs)
+        proj_kwargs: dict = dict(
+            in_features=n_embd,
+            out_features=n_embd,
+            rngs=rngs,
+            dtype=jnp.bfloat16,
+        )
         if proj_kernel_init is not None:
             proj_kwargs["kernel_init"] = proj_kernel_init
         elif kernel_init is not None:
@@ -55,6 +64,7 @@ class MultiHeadAttention(nnx.Module):
         self.proj = nnx.Linear(**proj_kwargs)
         self.a_dropout = nnx.Dropout(dropout, rngs=rngs)
         self.r_dropout = nnx.Dropout(dropout, rngs=rngs)
+        self.use_flash_attention = use_flash_attention
 
     def __call__(self, x: jax.Array):
         B, T, C = x.shape
@@ -67,18 +77,24 @@ class MultiHeadAttention(nnx.Module):
         query = query.reshape(B, T, self.num_heads, self.head_dim)
         value = value.reshape(B, T, self.num_heads, self.head_dim)
 
-        # (B, Q, nh, hd) @ (B, K, nh, hd) -> (B, nh, Q, K)
-        attn = jnp.einsum("bqhe,bkhe->bhqk", query, key) * (1 / jnp.sqrt(self.head_dim))
+        if self.use_flash_attention:
+            x = jax.nn.dot_product_attention(query, key, value, is_causal=True)
+        else:
+            # (B, Q, nh, hd) @ (B, K, nh, hd) -> (B, nh, Q, K)
+            attn = jnp.einsum("bqhe,bkhe->bhqk", query, key) * (
+                1 / jnp.sqrt(self.head_dim)
+            )
 
-        # Causal mask (e.g. q at 1 can only attend to k at 0 and 1).
-        attn = jnp.where(self.mask[...], -jnp.inf, attn)
+            # Causal mask (e.g. q at 1 can only attend to k at 0 and 1).
+            attn = jnp.where(self.mask[...], -jnp.inf, attn)
 
-        # Turn wei into a probability distribution along K.
-        attn = nnx.softmax(attn, axis=-1)
-        attn = self.a_dropout(attn)
+            # Turn wei into a probability distribution along K.
 
-        # (B, nh, Q, K) @ (B, K, nh, hd) -> (B, Q, nh, hd)
-        x = jnp.einsum("bhqk,bkhe->bqhe", attn, value)
+            attn = nnx.softmax(attn, axis=-1)
+            attn = self.a_dropout(attn)
+
+            # (B, nh, Q, K) @ (B, K, nh, hd) -> (B, Q, nh, hd)
+            x = jnp.einsum("bhqk,bkhe->bqhe", attn, value)
 
         x = x.reshape(B, T, C)
         x = self.proj(x)

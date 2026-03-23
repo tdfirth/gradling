@@ -33,6 +33,7 @@ class FeedForward(nnx.Module):
             rngs=rngs,
             use_bias=True,
             kernel_init=_init(),
+            dtype=jnp.bfloat16,
         )
         self.proj = nnx.Linear(
             in_features=4 * d_model,
@@ -40,6 +41,7 @@ class FeedForward(nnx.Module):
             rngs=rngs,
             use_bias=True,
             kernel_init=_residual_init(n_layers),
+            dtype=jnp.bfloat16,
         )
         self.dropout = nnx.Dropout(dropout, rngs=rngs)
 
@@ -64,6 +66,7 @@ class TransformerBlock(nnx.Module):
             rngs=rngs,
             kernel_init=_init(),
             proj_kernel_init=_residual_init(cfg.n_layers),
+            use_flash_attention=True,
         )
         self.ff = FeedForward(cfg.d_model, cfg.n_layers, cfg.dropout, rngs)
         self.ln1 = LayerNorm(cfg.d_model)
@@ -86,12 +89,14 @@ class GPT2(nnx.Module):
             features=cfg.d_model,
             rngs=rngs,
             embedding_init=_init(),
+            dtype=jnp.bfloat16,
         )
         self.pos_emb = nnx.Embed(
             num_embeddings=cfg.n_ctx,
             features=cfg.d_model,
             rngs=rngs,
             embedding_init=_init(),
+            dtype=jnp.bfloat16,
         )
         self.blocks = nnx.Sequential(
             *[TransformerBlock(cfg, rngs) for _ in range(cfg.n_layers)],

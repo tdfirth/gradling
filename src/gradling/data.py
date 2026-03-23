@@ -216,13 +216,13 @@ def random_iterator(
 _SENTINEL = object()
 
 
-def loader(batch_iterator: Iterator, size: int = 2):
+def loader(batch_iterator: Iterator, size: int = 2, dtype=np.int32):
     q = Queue(maxsize=size)
 
     def produce():
         try:
             for batch in batch_iterator:
-                q.put(jax.device_put(jax.tree.map(lambda x: x.astype(np.int32), batch)))
+                q.put(jax.device_put(jax.tree.map(lambda x: x.astype(dtype), batch)))
         except Exception as e:
             q.put(e)
         finally:

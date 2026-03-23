@@ -68,6 +68,7 @@ dev = [
     "pytest>=9.0.2",
     "pytest-subtests>=0.15.0",
     "ruff>=0.15.1",
+    "tensorboard>=2.20.0",
     "treescope>=0.1.10",
     "ty>=0.0.21",
 ]
