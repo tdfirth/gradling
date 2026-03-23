@@ -38,12 +38,31 @@ def path_matches(path, regex):
     return result is not None
 
 
-def _accumulate_micro_batches(step_fn, init_carry, xs, ys, micro_batch_size):
+def _accumulate_micro_batches(
+    step_fn, init_carry, xs, ys, micro_batch_size, *, debug: bool = False
+):
     n = xs.shape[0] // micro_batch_size
+    seq_len = xs.shape[1]
     micro_xs = xs.reshape(n, micro_batch_size, -1)
     micro_ys = ys.reshape(n, micro_batch_size, -1)
 
+    _last_time: list[float] = []
+
+    def _log_micro_batch(i, n, micro_batch_size, seq_len):
+        now = perf_counter()
+        if _last_time:
+            elapsed_ms = (now - _last_time[0]) * 1000
+            tokens = micro_batch_size * seq_len
+            tok_s = tokens / (elapsed_ms / 1000)
+            print(f"  micro_batch {i}/{n}  {elapsed_ms:.1f} ms  {tok_s:.0f} tok/s")
+        else:
+            print(f"  micro_batch {i}/{n}")
+        _last_time.clear()
+        _last_time.append(now)
+
     def body(i, carry):
+        if debug:
+            jax.debug.callback(_log_micro_batch, i, n, micro_batch_size, seq_len)
         return step_fn(carry, micro_xs[i], micro_ys[i])
 
     return jax.lax.fori_loop(0, n, body, init_carry), n
@@ -102,7 +121,11 @@ def _run_training_loop(
 
         zero_grads = jax.tree.map(jnp.zeros_like, params)
         (acc_grads, acc_loss), n = _accumulate_micro_batches(
-            train_body, (zero_grads, jnp.array(0.0)), xs, ys, cfg.micro_batch_size
+            train_body,
+            (zero_grads, jnp.array(0.0)),
+            xs,
+            ys,
+            cfg.micro_batch_size,
         )
 
         acc_grads = jax.tree.map(lambda g: g / n, acc_grads)
