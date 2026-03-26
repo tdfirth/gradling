@@ -273,15 +273,18 @@ def train(run: Run[GPTConfig]) -> None:
     log.info("Initializing optimizer")
     optimizer = nnx.Optimizer(
         model,
-        optax.adamw(
-            optax.warmup_cosine_decay_schedule(
-                init_value=cfg.learning_rate / 10,
-                peak_value=cfg.learning_rate,
-                warmup_steps=cfg.train_steps // 100,
-                decay_steps=cfg.train_steps,
+        optax.chain(
+            optax.clip_by_global_norm(1.0),
+            optax.adamw(
+                optax.warmup_cosine_decay_schedule(
+                    init_value=cfg.learning_rate / 10,
+                    peak_value=cfg.learning_rate,
+                    warmup_steps=cfg.train_steps // 100,
+                    decay_steps=cfg.train_steps,
+                ),
+                cfg.momentum,
+                weight_decay=0.1,
             ),
-            cfg.momentum,
-            weight_decay=0.1,
         ),
         wrt=nnx.Param,
     )
