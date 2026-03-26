@@ -43,6 +43,7 @@ STUDIES: dict[str, Study] = {
         description="Reimplementation of GPT-2 124M",
         commands={
             "train": Command(cfg=gpt2.GPTConfig, fn=gpt2.train, sinks=with_wandb),
+            "chat": Command(cfg=gpt2.ChatConfig, fn=gpt2.chat),
         },
     ),
 }

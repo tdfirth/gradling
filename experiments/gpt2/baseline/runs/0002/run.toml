@@ -2,7 +2,7 @@
 id = "0002"
 study = "gpt2"
 experiment = "baseline"
-notes = ""
+notes = "Train for longer, ~40B tokens"
 
 [config]
 seed = 42
@@ -14,7 +14,7 @@ n_ctx = 1024
 dropout = 0.0
 batch_size = 512
 micro_batch_size = 64
-learning_rate = 0.0012
+learning_rate = 0.0006
 momentum = 0.9
 train_steps = 76294
 dry_run = false
