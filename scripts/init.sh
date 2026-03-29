@@ -2,3 +2,4 @@
 curl -LsSf https://astral.sh/uv/install.sh | sh
 uv sync --extra cuda
 source .venv/bin/activate
+eval "$(register-python-argcomplete gradling)"
