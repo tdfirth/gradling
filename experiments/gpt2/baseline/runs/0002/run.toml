@@ -19,5 +19,4 @@ momentum = 0.9
 train_steps = 76294
 dry_run = false
 experiment_name = "baseline"
-run_path = "experiments/gpt2/baseline/runs/0002"
 checkpoint_label = "final"

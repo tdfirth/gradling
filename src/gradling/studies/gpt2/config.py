@@ -19,5 +19,4 @@ class GPTConfig(Config):
     train_steps: int = 600_000
     dry_run: bool = False
     experiment_name: str = "baseline"
-    run_path: str = runtime_field("")
     checkpoint_label: str = runtime_field("final")

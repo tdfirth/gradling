@@ -18,6 +18,5 @@ class AIAYNConfig(Config):
     train_steps: int = 10_000
     dry_run: bool = False
     experiment_name: str = "baseline"
-    run_path: str = ""
     checkpoint_label: str = "final"
     nl: str = "relu"

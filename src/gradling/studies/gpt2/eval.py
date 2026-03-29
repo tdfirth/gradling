@@ -19,7 +19,6 @@ log = logger.get(__name__)
 
 @dataclass
 class EvalConfig(Config):
-    run_path: str
     max_tokens: int = 1024
 
 

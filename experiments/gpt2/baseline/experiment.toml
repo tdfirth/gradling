@@ -18,5 +18,4 @@ momentum = 0.9
 train_steps = 19000
 dry_run = false
 experiment_name = "baseline"
-run_path = ""
 checkpoint_label = "final"
