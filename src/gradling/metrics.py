@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Protocol
@@ -8,7 +7,7 @@ from typing import Any, Protocol
 import jax
 
 from gradling import logger
-from gradling.env import load_dotenv
+from gradling.context import Context, load_dotenv
 
 log = logger.get(__name__)
 
@@ -26,7 +25,7 @@ class MetricSink(Protocol):
     def close(self) -> None: ...
 
 
-SinkFactory = Callable[["RunIdentity", dict[str, Any]], list[MetricSink]]
+SinkFactory = Callable[["Context", "RunIdentity", dict[str, Any]], list[MetricSink]]
 
 
 def is_loggable(x):
@@ -64,18 +63,18 @@ class WandbSink:
         self.run.finish()
 
 
-def _load_dotenv() -> None:
-    load_dotenv()
-
-
-def log_only(_identity: RunIdentity, _config: dict[str, Any]) -> list[MetricSink]:
+def log_only(
+    ctx: Context, _identity: RunIdentity, _config: dict[str, Any]
+) -> list[MetricSink]:
     return [LogSink()]
 
 
-def with_wandb(identity: RunIdentity, config: dict[str, Any]) -> list[MetricSink]:
+def with_wandb(
+    ctx: Context, identity: RunIdentity, config: dict[str, Any]
+) -> list[MetricSink]:
     sinks: list[MetricSink] = [LogSink()]
-    _load_dotenv()
-    if os.environ.get("WANDB_API_KEY"):
+    load_dotenv()
+    if ctx.wandb_api_key:
         try:
             sinks.append(WandbSink(identity, config))
         except Exception:

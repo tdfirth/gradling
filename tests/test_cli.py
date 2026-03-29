@@ -201,7 +201,7 @@ def test_run_chat_help_shows_chat_config_fields(capsys):
     assert "--max-tokens" in out
 
 
-def test_run_start_dispatches_to_train_command(tmp_path):
+def test_run_cmd_dispatches_to_appropriate_command(tmp_path):
     captured: list[Run[CliConfigFixture]] = []
 
     def train(run: Run[CliConfigFixture]) -> None:
@@ -224,7 +224,7 @@ def test_run_start_dispatches_to_train_command(tmp_path):
     code = _run(
         Context(root=tmp_path),
         registry,
-        ["run", "test_model", "start", "baseline", "0001"],
+        ["run", "test_model", "train", "baseline", "0001"],
     )
 
     assert code == 0

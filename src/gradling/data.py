@@ -17,7 +17,7 @@ from tqdm import tqdm
 from transformers import AutoTokenizer, TokenizersBackend
 
 from gradling import logger
-from gradling.dir import ROOT
+from gradling.context import ROOT
 from gradling.tokenizers import Tokenizer
 
 log = logger.get(__name__)

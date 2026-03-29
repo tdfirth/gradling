@@ -276,7 +276,7 @@ class App:
         return parser
 
     def _add_study(self, sub: argparse._SubParsersAction) -> None:
-        study = _subparser(sub, "study", help="List and inspect studies")
+        study = _subparser(sub, "study", help="List and inspect studies", aliases=["s"])
         study_sub = study.add_subparsers(dest="study_command", required=True)
 
         p = _subparser(study_sub, "list", help="List all registered studies")
@@ -284,7 +284,7 @@ class App:
 
     def _add_experiment(self, sub: argparse._SubParsersAction) -> None:
         experiment = _subparser(
-            sub, "experiment", help="Create and inspect experiments"
+            sub, "experiment", help="Create and inspect experiments", aliases=["x"]
         )
         experiment_sub = experiment.add_subparsers(dest="study_name", required=True)
 
@@ -306,7 +306,9 @@ class App:
             lst.set_defaults(func=self.experiment_list)
 
     def _add_run(self, sub: argparse._SubParsersAction) -> None:
-        run = _subparser(sub, "run", help="Create, inspect, and sync runs")
+        run = _subparser(
+            sub, "run", help="Create, inspect, and sync runs", aliases=["r"]
+        )
         run_sub = run.add_subparsers(dest="study_name", required=True)
 
         for name, spec in self.registry.items():
@@ -357,7 +359,10 @@ class App:
 
     def _add_debug(self, sub: argparse._SubParsersAction) -> None:
         debug = _subparser(
-            sub, "debug", help="Run a command in debug mode (no wandb, overwrites run)"
+            sub,
+            "debug",
+            help="Run a command in debug mode (no wandb, overwrites run)",
+            aliases=["d"],
         )
         debug_sub = debug.add_subparsers(dest="study_name", required=True)
 
@@ -375,7 +380,9 @@ class App:
                 p.set_defaults(func=partial(self.debug, command=cmd))
 
     def _add_datasets(self, sub: argparse._SubParsersAction) -> None:
-        datasets = _subparser(sub, "datasets", help="Prepare and sync datasets")
+        datasets = _subparser(
+            sub, "datasets", help="Prepare and sync datasets", aliases=["ds"]
+        )
         ds_sub = datasets.add_subparsers(dest="datasets_command", required=True)
 
         ds_name_help = "HF dataset name (e.g. roneneldan/TinyStories)"

@@ -239,7 +239,7 @@ class Run[Cfg: Config]:
             ctx,
             path,
             cfg,
-            Metrics(sink_factory(identity, raw_cfg)),
+            Metrics(sink_factory(ctx, identity, raw_cfg)),
             identity=identity,
             raw_cfg=raw_cfg,
         )

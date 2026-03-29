@@ -35,7 +35,7 @@ class FakeSink:
 
 
 def _fake_sink_factory(
-    _identity: RunIdentity, _config: dict[str, Any]
+    ctx: Context, _identity: RunIdentity, _config: dict[str, Any]
 ) -> list[MetricSink]:
     return [FakeSink()]
 

@@ -1,5 +1,4 @@
 import logging
-import os
 from typing import Any
 from unittest.mock import patch
 
@@ -95,27 +94,34 @@ class TestRunTrack:
 
 
 class TestLogOnly:
-    def test_returns_log_sink(self):
-        sinks = log_only(FAKE_IDENTITY, {})
+    def test_returns_log_sink(self, tmp_path):
+        sinks = log_only(Context(root=tmp_path), FAKE_IDENTITY, {})
         assert len(sinks) == 1
         assert isinstance(sinks[0], LogSink)
 
 
 class TestWithWandb:
-    def test_returns_log_sink_without_key(self):
-        env = {k: v for k, v in os.environ.items() if k != "WANDB_API_KEY"}
+    def test_returns_log_sink_without_key(self, tmp_path):
         with (
-            patch("gradling.metrics._load_dotenv"),
-            patch.dict(os.environ, env, clear=True),
+            patch("gradling.metrics.load_dotenv"),
+            patch.object(
+                Context,
+                "wandb_api_key",
+                new_callable=lambda: property(lambda self: None),
+            ),
         ):
-            sinks = with_wandb(FAKE_IDENTITY, {})
-        assert len(sinks) == 1
-        assert isinstance(sinks[0], LogSink)
+            sinks = with_wandb(Context(root=tmp_path), FAKE_IDENTITY, {})
+            assert len(sinks) == 1
+            assert isinstance(sinks[0], LogSink)
 
-    def test_always_includes_log_sink(self):
+    def test_always_includes_log_sink(self, tmp_path):
         with (
-            patch("gradling.metrics._load_dotenv"),
-            patch.dict(os.environ, {}, clear=True),
+            patch("gradling.metrics.load_dotenv"),
+            patch.object(
+                Context,
+                "wandb_api_key",
+                new_callable=lambda: property(lambda self: None),
+            ),
         ):
-            sinks = with_wandb(FAKE_IDENTITY, {})
-        assert any(isinstance(s, LogSink) for s in sinks)
+            sinks = with_wandb(Context(root=tmp_path), FAKE_IDENTITY, {})
+            assert any(isinstance(s, LogSink) for s in sinks)

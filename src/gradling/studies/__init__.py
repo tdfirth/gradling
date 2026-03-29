@@ -1,22 +1,23 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-
-from pydantic import BaseModel
+from dataclasses import dataclass
 
 from gradling.config import Config
 from gradling.metrics import RunIdentity, SinkFactory, log_only, with_wandb
 from gradling.studies import aiayn, gpt2, mlp
 
 
-class Command[Cfg: Config](BaseModel):
+@dataclass
+class Command[Cfg: Config]:
     model_config = {"arbitrary_types_allowed": True}
     cfg: type[Cfg]
     fn: Callable[..., None]
     sinks: SinkFactory = log_only
 
 
-class Study[Cfg: Config](BaseModel):
+@dataclass
+class Study[Cfg: Config]:
     cfg: type[Cfg]
     commands: dict[str, Command]
     description: str = ""
