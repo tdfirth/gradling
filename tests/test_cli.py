@@ -149,7 +149,9 @@ def test_study_list(capsys):
 
 def test_experiment_create_help_shows_config_fields(capsys):
     code = _run(
-        Context(), TEST_REGISTRY, ["experiment", "test_model", "create", "--help"]
+        Context(),
+        TEST_REGISTRY,
+        ["experiment", "test_model", "create", "--help"],
     )
     out = capsys.readouterr().out
     assert code == 0
@@ -179,7 +181,7 @@ def test_run_create_help_shows_model_config_fields(capsys):
     code = _run(
         Context(),
         TEST_REGISTRY,
-        ["run", "test_model", "create", "--help"],
+        ["run", "test_model/baseline", "create", "--help"],
     )
     out = capsys.readouterr().out
     assert code == 0
@@ -194,7 +196,7 @@ def test_run_chat_help_shows_chat_config_fields(capsys):
     code = _run(
         Context(),
         TEST_REGISTRY,
-        ["run", "test_model", "chat", "--help"],
+        ["run", "test_model/baseline/0001", "chat", "--help"],
     )
     out = capsys.readouterr().out
     assert code == 0
@@ -224,7 +226,7 @@ def test_run_cmd_dispatches_to_appropriate_command(tmp_path):
     code = _run(
         Context(root=tmp_path),
         registry,
-        ["run", "test_model", "train", "baseline", "0001"],
+        ["run", "test_model/baseline/0001", "train"],
     )
 
     assert code == 0
@@ -255,7 +257,7 @@ def test_run_chat_dispatches_to_chat_command(tmp_path):
     code = _run(
         Context(root=tmp_path),
         registry,
-        ["run", "test_model", "chat", "baseline", "0001", "--max-tokens", "99"],
+        ["run", "test_model/baseline/0001", "chat", "--max-tokens", "99"],
     )
 
     assert code == 0
@@ -285,7 +287,7 @@ def test_debug_dispatches_command(tmp_path):
     code = _run(
         Context(root=tmp_path),
         registry,
-        ["debug", "test_model", "train", "baseline"],
+        ["debug", "test_model/baseline", "train"],
     )
 
     assert code == 0
@@ -311,8 +313,8 @@ def test_debug_overwrites_previous_debug_run(tmp_path):
     _write_experiment(experiment_path)
 
     ctx = Context(root=tmp_path)
-    _run(ctx, registry, ["debug", "test_model", "train", "baseline"])
-    _run(ctx, registry, ["debug", "test_model", "train", "baseline"])
+    _run(ctx, registry, ["debug", "test_model/baseline", "train"])
+    _run(ctx, registry, ["debug", "test_model/baseline", "train"])
 
     assert len(captured) == 2
     debug_path = experiment_path / "runs" / "debug"
@@ -336,7 +338,7 @@ def test_push_invokes_storage_handler(tmp_path):
     code = _run(
         ctx,
         TEST_REGISTRY,
-        ["run", "test_model", "push", "baseline", "0001"],
+        ["run", "test_model/baseline/0001", "push"],
         store=store,
     )
 
@@ -353,7 +355,7 @@ def test_pull_invokes_storage_handler(tmp_path):
     code = _run(
         ctx,
         TEST_REGISTRY,
-        ["run", "test_model", "pull", "baseline", "0001"],
+        ["run", "test_model/baseline/0001", "pull"],
         store=store,
     )
 
