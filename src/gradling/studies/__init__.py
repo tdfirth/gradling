@@ -44,6 +44,7 @@ STUDIES: dict[str, Study] = {
         commands={
             "train": Command(cfg=gpt2.GPTConfig, fn=gpt2.train, sinks=with_wandb),
             "chat": Command(cfg=gpt2.ChatConfig, fn=gpt2.chat),
+            "eval": Command(cfg=gpt2.EvalConfig, fn=gpt2.eval),
         },
     ),
 }

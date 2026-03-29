@@ -212,21 +212,7 @@ class App:
         experiment = self._resolve_experiment(ns.study_name, ns.experiment)
         self.console.print(_runs_table(self.ctx, experiment, experiment.list_runs()))
 
-    def run_start(self, ns: argparse.Namespace) -> None:
-        spec = self._get_study(ns.study_name)
-        command = spec.commands.get("train")
-        if command is None:
-            raise RuntimeError(f"Study {ns.study_name!r} has no 'train' command.")
-        run = self._resolve_run(
-            ns.study_name,
-            ns.experiment,
-            ns.run_id,
-            cfg_cls=command.cfg,
-            sink_factory=command.sinks,
-        )
-        command.fn(run)
-
-    def run_chat(self, ns: argparse.Namespace, command: Command) -> None:
+    def run_command(self, ns: argparse.Namespace, command: Command) -> None:
         overrides = _config_overrides(ns, command.cfg)
         run = self._resolve_run(
             ns.study_name,
@@ -331,8 +317,7 @@ class App:
 
             self._add_run_create(study_cmd_sub, spec)
             self._add_run_list(study_cmd_sub)
-            self._add_run_start(study_cmd_sub)
-            self._add_run_chat(study_cmd_sub, spec)
+            self._add_run_commands(study_cmd_sub, spec)
             self._add_run_push(study_cmd_sub)
             self._add_run_pull(study_cmd_sub)
 
@@ -348,27 +333,27 @@ class App:
         p.add_argument("experiment", help="Experiment name")
         p.set_defaults(func=self.run_list)
 
-    def _add_run_start(self, run_sub: argparse._SubParsersAction) -> None:
-        p = _subparser(run_sub, "start", help="Start training for a run")
-        p.add_argument("experiment", help="Experiment name")
-        p.add_argument("run_id", help="Run ID")
-        p.set_defaults(func=self.run_start)
-
-    def _add_run_chat(self, run_sub: argparse._SubParsersAction, spec: Study) -> None:
-        chat_cmd = spec.commands.get("chat")
-        if chat_cmd is None:
-            return
-        p = _subparser(run_sub, "chat", help="Chat with a run checkpoint")
-        p.add_argument("experiment", help="Experiment name")
-        p.add_argument("run_id", help="Run ID")
-        _add_config_flags(p, chat_cmd.cfg, exclude=HIDDEN_CONFIG_FIELDS)
-        p.set_defaults(func=partial(self.run_chat, command=chat_cmd))
-
     def _add_run_push(self, run_sub: argparse._SubParsersAction) -> None:
         p = _subparser(run_sub, "push", help="Upload run checkpoints to Hugging Face")
         p.add_argument("experiment", help="Experiment name")
         p.add_argument("run_id", help="Run ID")
         p.set_defaults(func=self.run_push)
+
+    def _add_run_commands(
+        self, run_sub: argparse._SubParsersAction, spec: Study
+    ) -> None:
+        cmds = spec.commands
+
+        for name, cmd in cmds.items():
+            p = _subparser(
+                run_sub,
+                name,
+                help=f"Run script `{name}` for the specified experiment and run.",
+            )
+            p.add_argument("experiment", help="Experiment name")
+            p.add_argument("run_id", help="Run ID")
+            _add_config_flags(p, cmd.cfg, exclude=HIDDEN_CONFIG_FIELDS)
+            p.set_defaults(func=partial(self.run_command, command=cmd))
 
     def _add_debug(self, sub: argparse._SubParsersAction) -> None:
         debug = _subparser(
