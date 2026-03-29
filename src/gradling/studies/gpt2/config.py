@@ -20,3 +20,13 @@ class GPTConfig(Config):
     dry_run: bool = False
     experiment_name: str = "baseline"
     checkpoint_label: str = runtime_field("final")
+
+
+@dataclass
+class ChatConfig(Config):
+    max_tokens: int = 1024
+
+
+@dataclass
+class EvalConfig(Config):
+    max_tokens: int = 1024

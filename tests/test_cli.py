@@ -393,7 +393,9 @@ def test_datasets_prepare_dispatches(tmp_path, monkeypatch):
             dev_tokens=50,
         )
 
-    monkeypatch.setattr(cli.datalib, "prepare", fake_prepare)
+    import gradling.data
+
+    monkeypatch.setattr(gradling.data, "prepare", fake_prepare)
 
     code = _run(
         Context(root=tmp_path),

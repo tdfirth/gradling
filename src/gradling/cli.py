@@ -6,17 +6,18 @@ import sys
 from functools import partial
 from pathlib import Path
 from types import UnionType
-from typing import Any, Union, get_args, get_origin, get_type_hints
+from typing import TYPE_CHECKING, Any, Union, get_args, get_origin, get_type_hints
 
 import argcomplete
+
+if TYPE_CHECKING:
+    from gradling import run as runlib
+    from gradling import storage
 from rich.console import Console
 from rich.table import Table
 from rich_argparse import RichHelpFormatter
 from tomlkit.exceptions import ParseError
 
-from gradling import data as datalib
-from gradling import run as runlib
-from gradling import storage
 from gradling.config import Config
 from gradling.context import Context
 from gradling.metrics import SinkFactory, log_only, with_wandb
@@ -113,6 +114,8 @@ def _experiment_path(ctx: Context, study_name: str, experiment: str) -> Path:
 def _resolve_experiment(
     ctx: Context, study_name: str, experiment: str
 ) -> runlib.Experiment:
+    from gradling import run as runlib
+
     return runlib.Experiment.from_path(
         ctx, _experiment_path(ctx, study_name, experiment)
     )
@@ -247,7 +250,7 @@ class ExperimentSubcommand:
             add_help=False,
         )
         completer = partial(_complete_study, self.ctx.experiments)
-        experiment.add_argument("target", help="Study name").completer = completer
+        experiment.add_argument("target", help="Study name").completer = completer  # type: ignore[attr-defined]
         experiment.set_defaults(func=self.dispatch)
 
     def _build_command_parser(
@@ -296,11 +299,15 @@ class ExperimentSubcommand:
         if not name:
             raise ValueError("Experiment name is required.")
 
+        from gradling import run as runlib
+
         cfg = spec.cfg(**overrides).to_dict()
         experiment = runlib.Experiment.create(self.ctx, study_name, name, notes, cfg)
         self.console.print(self.ctx.display_path(experiment.path))
 
     def _list(self, study_name: str) -> None:
+        from gradling import run as runlib
+
         study_dir = self.ctx.experiments / study_name
         if not study_dir.exists():
             self.console.print(_experiments_table(self.ctx, study_name, []))
@@ -336,7 +343,7 @@ class RunSubcommand:
         completer = partial(_complete_run_target, self.ctx.experiments)
         run.add_argument(
             "target", help="study/experiment[/run_id]"
-        ).completer = completer
+        ).completer = completer  # type: ignore[attr-defined]
         run.set_defaults(func=self.dispatch)
 
     def _build_command_parser(
@@ -403,6 +410,8 @@ class RunSubcommand:
         overrides: dict[str, Any] | None = None,
         sink_factory: SinkFactory = log_only,
     ) -> runlib.Run:
+        from gradling import run as runlib
+
         path = _experiment_path(self.ctx, study_name, experiment) / "runs" / run_id
         return runlib.Run.from_path(
             self.ctx,
@@ -491,7 +500,7 @@ class DebugSubcommand:
             add_help=False,
         )
         completer = partial(_complete_experiment_target, self.ctx.experiments)
-        debug.add_argument("target", help="study/experiment").completer = completer
+        debug.add_argument("target", help="study/experiment").completer = completer  # type: ignore[attr-defined]
         debug.set_defaults(func=self.dispatch)
 
     def _build_command_parser(
@@ -523,6 +532,8 @@ class DebugSubcommand:
 
         parser = self._build_command_parser(target, spec)
         cmd_ns = parser.parse_args(remaining)
+
+        from gradling import run as runlib
 
         logging.getLogger("gradling").setLevel(logging.DEBUG)
         command = spec.commands[cmd_ns.debug_command]
@@ -576,6 +587,8 @@ class DatasetSubcommand:
         p.set_defaults(func=self.pull)
 
     def prepare(self, ns: argparse.Namespace) -> None:
+        from gradling import data as datalib
+
         meta = datalib.prepare(self.ctx.root, ns.dataset_name, ns.config)
         d = datalib.dataset_dir(self.ctx.root, ns.dataset_name, ns.config)
         self.console.print(self.ctx.display_path(d))
@@ -628,6 +641,8 @@ def parse_args(
     store: storage.RunStorage | None = None,
     dataset_store: storage.DatasetTransport | None = None,
 ) -> argparse.Namespace:
+    from gradling import storage
+
     args = argv if argv is not None else sys.argv[1:]
     if store is None:
         store = storage.RunStorage(ctx, storage.HfApiTransport(ctx))

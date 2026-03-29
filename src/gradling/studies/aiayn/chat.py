@@ -1,7 +1,6 @@
 import queue
 import sys
 import threading
-from dataclasses import dataclass
 from typing import NamedTuple, cast
 
 import jax
@@ -12,16 +11,11 @@ from jax.experimental import io_callback
 from transformers import AutoTokenizer, TokenizersBackend
 
 from gradling import logger
-from gradling.config import Config
 from gradling.run import Run
-from gradling.studies.aiayn.model import AIAYN, AIAYNConfig
+from gradling.studies.aiayn.config import AIAYNConfig, ChatConfig
+from gradling.studies.aiayn.model import AIAYN
 
 log = logger.get(__name__)
-
-
-@dataclass
-class ChatConfig(Config):
-    max_tokens: int = 1024
 
 
 def right_pad(input: list[int], n: int, tok: int) -> list[int]:

@@ -2,8 +2,9 @@ import pytest
 from flax import nnx
 
 from gradling.data import jax_random_iterator, prepare_training_data
-from gradling.studies.aiayn import AIAYN, AIAYNConfig
 from gradling.studies.aiayn.chat import right_pad
+from gradling.studies.aiayn.config import AIAYNConfig
+from gradling.studies.aiayn.model import AIAYN
 from gradling.tokenizers import CharacterTokenizer
 
 CORPUS = "The quick brown fox jumped over the lazy dog."

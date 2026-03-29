@@ -1,10 +1,3 @@
-from gradling.run import Run
-from gradling.studies.mlp.model import MLPConfig
-from gradling.studies.mlp.model import train as _train_impl
+from gradling.studies.mlp.config import MLPConfig
 
-
-def train(run: Run[MLPConfig]) -> None:
-    _train_impl(run.cfg)
-
-
-__all__ = ["MLPConfig", "train"]
+__all__ = ["MLPConfig"]

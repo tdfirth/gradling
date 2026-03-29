@@ -1,11 +1,29 @@
 from __future__ import annotations
 
+import importlib
 from collections.abc import Callable
 from dataclasses import dataclass
 
 from gradling.config import Config
 from gradling.metrics import RunIdentity, SinkFactory, log_only, with_wandb
-from gradling.studies import aiayn, gpt2, mlp
+from gradling.studies.aiayn.config import AIAYNConfig
+from gradling.studies.aiayn.config import ChatConfig as AIAYNChatConfig
+from gradling.studies.gpt2.config import (
+    ChatConfig as GPTChatConfig,
+)
+from gradling.studies.gpt2.config import (
+    EvalConfig,
+    GPTConfig,
+)
+from gradling.studies.mlp.config import MLPConfig
+
+
+def _lazy(module: str, attr: str) -> Callable[..., None]:
+    def wrapper(*args, **kwargs):
+        mod = importlib.import_module(module)
+        return getattr(mod, attr)(*args, **kwargs)
+
+    return wrapper
 
 
 @dataclass
@@ -25,27 +43,48 @@ class Study[Cfg: Config]:
 
 STUDIES: dict[str, Study] = {
     "mlp": Study(
-        cfg=mlp.MLPConfig,
+        cfg=MLPConfig,
         description="A simple MLP in vanilla jax",
         commands={
-            "train": Command(cfg=mlp.MLPConfig, fn=mlp.train, sinks=with_wandb),
+            "train": Command(
+                cfg=MLPConfig,
+                fn=_lazy("gradling.studies.mlp.train", "train"),
+                sinks=with_wandb,
+            ),
         },
     ),
     "aiayn": Study(
-        cfg=aiayn.AIAYNConfig,
+        cfg=AIAYNConfig,
         description="Decoder only transformer based on Attention is All You Need",
         commands={
-            "train": Command(cfg=aiayn.AIAYNConfig, fn=aiayn.train, sinks=with_wandb),
-            "chat": Command(cfg=aiayn.ChatConfig, fn=aiayn.chat),
+            "train": Command(
+                cfg=AIAYNConfig,
+                fn=_lazy("gradling.studies.aiayn.train", "train"),
+                sinks=with_wandb,
+            ),
+            "chat": Command(
+                cfg=AIAYNChatConfig,
+                fn=_lazy("gradling.studies.aiayn.chat", "chat"),
+            ),
         },
     ),
     "gpt2": Study(
-        cfg=gpt2.GPTConfig,
+        cfg=GPTConfig,
         description="Reimplementation of GPT-2 124M",
         commands={
-            "train": Command(cfg=gpt2.GPTConfig, fn=gpt2.train, sinks=with_wandb),
-            "chat": Command(cfg=gpt2.ChatConfig, fn=gpt2.chat),
-            "eval": Command(cfg=gpt2.EvalConfig, fn=gpt2.eval),
+            "train": Command(
+                cfg=GPTConfig,
+                fn=_lazy("gradling.studies.gpt2.train", "train"),
+                sinks=with_wandb,
+            ),
+            "chat": Command(
+                cfg=GPTChatConfig,
+                fn=_lazy("gradling.studies.gpt2.chat", "chat"),
+            ),
+            "eval": Command(
+                cfg=EvalConfig,
+                fn=_lazy("gradling.studies.gpt2.eval", "eval"),
+            ),
         },
     ),
 }

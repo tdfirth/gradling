@@ -4,8 +4,6 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Protocol
 
-import jax
-
 from gradling import logger
 from gradling.context import Context, load_dotenv
 
@@ -29,6 +27,8 @@ SinkFactory = Callable[["Context", "RunIdentity", dict[str, Any]], list[MetricSi
 
 
 def is_loggable(x):
+    import jax
+
     return isinstance(x, int | float | str | jax.Array)
 
 

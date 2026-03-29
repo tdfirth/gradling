@@ -1,4 +1,3 @@
-from dataclasses import dataclass
 from typing import cast
 
 import optax
@@ -8,18 +7,12 @@ from jax import numpy as jnp
 from transformers import AutoTokenizer, TokenizersBackend
 
 from gradling import logger
-from gradling.config import Config
 from gradling.evals import hellaswag
 from gradling.run import Run
-from gradling.studies.gpt2.config import GPTConfig
+from gradling.studies.gpt2.config import EvalConfig, GPTConfig
 from gradling.studies.gpt2.model import GPT2
 
 log = logger.get(__name__)
-
-
-@dataclass
-class EvalConfig(Config):
-    max_tokens: int = 1024
 
 
 def right_pad(input: list[int], n: int, tok: int) -> list[int]:

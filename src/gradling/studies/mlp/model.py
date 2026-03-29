@@ -9,8 +9,8 @@ import jax
 from jax import numpy as jnp
 from jax import random
 
-from gradling.config import Config, runtime_field
 from gradling.data import NAMES
+from gradling.studies.mlp.config import MLPConfig
 
 
 def make_rng(seed=42):
@@ -30,15 +30,6 @@ class dot_dict(dict):
     @classmethod
     def tree_unflatten(cls, keys, values):
         return cls(zip(keys, values))
-
-
-@dataclass
-class MLPConfig(Config):
-    rng_seed: int = 42
-    ctx_length: int = 8
-    emb_size: int = 24
-    hidden_size: int = 200
-    vocab_size: int = runtime_field(0)
 
 
 @dataclass

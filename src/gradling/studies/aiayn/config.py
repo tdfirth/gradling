@@ -20,3 +20,8 @@ class AIAYNConfig(Config):
     experiment_name: str = "baseline"
     checkpoint_label: str = "final"
     nl: str = "relu"
+
+
+@dataclass
+class ChatConfig(Config):
+    max_tokens: int = 1024
